@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: wms-postgres
+    environment:
+      POSTGRES_DB: demo_db
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo_pwd_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - wms-pg-data:/var/lib/postgresql/data
+      - ./sql/setup.sql:/docker-entrypoint-initdb.d/10-setup.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d demo_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    # 项目里 spring.data.redis.password = wms2026；与本服务的 requirepass 对齐
+    image: redis:8-alpine
+    container_name: wms-redis
+    command:
+      - redis-server
+      - --requirepass
+      - wms2026
+      - --appendonly
+      - "yes"
+    ports:
+      # 主机 6379 已被本机 Memurai 占用，改映射到 6380；应用以 REDIS_PORT=6380 覆盖 application.properties
+      - "6380:6379"
+    volumes:
+      - wms-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "wms2026", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: wms-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: wms
+      RABBITMQ_DEFAULT_PASS: wms2026
+    ports:
+      # 5672 在本机 bind 静默失败（与 docker daemon 状态有关，可能 Hyper-V 端口转发问题），
+      # 所以改映射到 5673；应用以 RABBITMQ_PORT=5673 覆盖 application.properties
+      - "5673:5672"     # AMQP
+      - "15672:15672"   # Management UI: http://localhost:15672
+    volumes:
+      - wms-rabbit-data:/var/lib/rabbitmq
+      - wms-rabbit-conf:/etc/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  wms-pg-data:
+  wms-redis-data:
+  wms-rabbit-data:
+  wms-rabbit-conf:

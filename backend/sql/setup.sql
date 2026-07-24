@@ -1,0 +1,8 @@
+DROP DATABASE IF EXISTS demo_db;
+DROP USER IF EXISTS demo;
+
+CREATE USER demo WITH PASSWORD 'demo_pwd@2026';
+CREATE DATABASE demo_db OWNER demo;
+\c demo_db
+GRANT ALL ON SCHEMA public TO demo;
+ALTER DATABASE demo_db OWNER TO demo;
