@@ -24,15 +24,13 @@
 - [五、环境变量与默认值](#五环境变量与默认值)
 - [六、API 一览](#六api-一览)
 - [七、关键实现细节](#七关键实现细节)
-- [八、可能踩到的坑](#八可能踩到的坑)
-- [九、下一步建议](#九下一步建议)
 
 ---
 
 ## 0. 模块边界与责任划分
 
 > 当前版本（Maven 单模块 + 包内划分）按以下边界组织代码；
-> 下一步重构目标为 **多模块拆分**（父 POM + `platform / catalog / procurement / ivp / sales / app` 六子模块），参见 §九。
+> 重构目标为按业务域拆分为 **多模块 Maven 工程**（父 POM + `platform / catalog / procurement / ivp / sales / app` 六子模块）。
 
 | 模块 | Service 接口（当前包） | 主要责任 | 对应 API 文档章节 |
 |------|------------------------|----------|--------------------|
@@ -394,31 +392,3 @@ interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.POSTGRE_SQ
 - MyBatis-Plus：`mybatis-plus-spring-boot4-starter`
 - Testcontainers 2.x：`testcontainers-*` 前缀的 artifact
 
----
-
-## 八、可能踩到的坑
-
-| 现象 | 原因 | 解决 |
-|---|---|---|
-| `PaginationInnerInterceptor 找不到` | MP 3.5.10+ 拆分 | 加 `mybatis-plus-jsqlparser` 依赖 |
-| `org.postgresql:postgresql ... not found` | 本地 maven 缓存问题 | `mvn -U dependency:resolve` 重拉 |
-| `spring-boot-starter-parent:pom:4.1.0.RELEASE not found` | Central 用裸版本号 | pom 里改 `<version>4.1.0</version>` |
-| `Connection to localhost:5432 refused` | PostgreSQL 没启动 | 用管理员启动 `postgresql-x64-18` 服务 |
-| Redis 连接失败 | Redis 未启动或密码错 | 检查 Redis 服务和 `spring.data.redis.*` |
-| RabbitMQ 连接失败 | RabbitMQ 未启动 | 用管理员启动 `RabbitMQ` 服务 |
-| `java -version` 输出 25，编译却用 21 报错 | 系统默认 `java` 与 `JAVA_HOME` 不一致 | `set JAVA_HOME=<JDK 21 安装目录>` 后再 `mvn` |
-| 应用连不上数据库（`28P01`/`FATAL`）| `setup.sql` 密码 (`demo_pwd@2026`) 与 `application.properties` 默认值 (`demo_pwd_2026`) 不一致 | 二选一保持一致（推荐用环境变量） |
-| 控制台乱码 | Windows + zh_CN + GBK | `chcp 65001` 改 UTF-8 |
-
----
-
-## 九、下一步建议
-
-- [ ] 引入 Flyway / Liquibase 替代 `schema.sql`，做正式的 schema 版本管理
-- [ ] 增加 OpenAPI / SpringDoc 接口文档页面（自动生成）
-- [ ] 完善单元测试与 Testcontainers 集成测试覆盖率
-- [ ] 多环境 profile：`application-dev.yml` / `application-prod.yml`
-- [ ] 整理 `compose.yaml` 进仓库，方便 Docker 一键启动
-- [ ] Dockerfile + CI/CD 流水线
-- [ ] 接入 ELK / Prometheus / Grafana 做日志与监控
-- [ ] 统一 `setup.sql` 与 `application.properties` 的默认密码（建议统一为 `demo_pwd_2026`）
