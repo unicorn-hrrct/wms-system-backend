@@ -169,8 +169,9 @@ class BusinessApiControllerTests {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.payStatus").value(1));
 
+        String admin = bearerToken("admin", "admin123");
         mockMvc.perform(post("/api/v1/order/{orderId}/ship", orderId)
-                .header(HttpHeaders.AUTHORIZATION, bearerToken("admin", "admin123"))
+                .header(HttpHeaders.AUTHORIZATION, admin)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"logisticsCompany\":\"顺丰\",\"logisticsNo\":\"SF10001\"}"))
             .andExpect(status().isOk());
@@ -186,17 +187,44 @@ class BusinessApiControllerTests {
             .andReturn();
         long orderItemId = json(detail).path("data").path("items").get(0).path("orderItemId").asLong();
 
-        MvcResult refundResult = mockMvc.perform(post("/api/v1/order/aftersale")
+        MvcResult aftersaleResult = mockMvc.perform(post("/api/v1/order/aftersale")
                 .header(HttpHeaders.AUTHORIZATION, alice)
                 .header("Idempotency-Key", "refund-" + UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"orderId\":" + orderId + ",\"orderItemId\":" + orderItemId
-                    + ",\"type\":1,\"reason\":\"测试退货\"}"))
+                    + ",\"type\":1,\"reason\":\"测试退货\",\"applyRefundAmount\":"
+                    + orderPayAmount.toPlainString() + "}"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value(0))
+            .andExpect(jsonPath("$.data.aftersaleNo").isString())
             .andReturn();
-        String refundNo = json(refundResult).path("data").path("refundNo").asText();
-        long refundId = json(refundResult).path("data").path("refundId").asLong();
+        String aftersaleNo = json(aftersaleResult).path("data").path("aftersaleNo").asText();
+        long aftersaleId = json(aftersaleResult).path("data").path("aftersaleId").asLong();
+
+        mockMvc.perform(get("/api/v1/web/aftersale")
+                .header(HttpHeaders.AUTHORIZATION, admin)
+                .param("aftersaleNo", aftersaleNo))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.list[0].aftersaleId").value(aftersaleId));
+
+        mockMvc.perform(get("/api/v1/web/aftersale/{aftersaleId}", aftersaleId)
+                .header(HttpHeaders.AUTHORIZATION, admin))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.aftersaleNo").value(aftersaleNo))
+            .andExpect(jsonPath("$.data.orderItem.productName").value("iPhone 15 Pro"));
+
+        MvcResult auditResult = mockMvc.perform(put("/api/v1/web/aftersale/{aftersaleId}/audit", aftersaleId)
+                .header(HttpHeaders.AUTHORIZATION, admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"auditStatus\":1,\"approvedAmount\":" + orderPayAmount.toPlainString()
+                    + ",\"auditRemark\":\"同意退款\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value(1))
+            .andExpect(jsonPath("$.data.refundNo").isString())
+            .andReturn();
+        String refundNo = json(auditResult).path("data").path("refundNo").asText();
+        long refundId = json(auditResult).path("data").path("refundId").asLong();
 
         mockMvc.perform(get("/api/v1/refund/my")
                 .header(HttpHeaders.AUTHORIZATION, alice)
@@ -273,6 +301,86 @@ class BusinessApiControllerTests {
                 .header(HttpHeaders.AUTHORIZATION, bearerToken("alice", "alice123")))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    void customerCanApplyForMerchantAndAdminCanApprove() throws Exception {
+        String alice = bearerToken("alice", "alice123");
+        String admin = bearerToken("admin", "admin123");
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String merchantCode = "CDX" + suffix;
+        String merchantName = "Codex Merchant " + suffix;
+        String idempotencyKey = "merchant-" + UUID.randomUUID();
+        String applyBody = """
+            {"merchantName":"%s","merchantCode":"%s","contactName":"Alice",
+             "contactPhone":"13800138001","contactEmail":"alice@example.com",
+             "licenseNo":"LIC-%s","businessScope":"electronics","address":"Shenzhen"}
+            """.formatted(merchantName, merchantCode, suffix);
+
+        MvcResult applyResult = mockMvc.perform(post("/api/v1/merchant/apply")
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(applyBody))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value(0))
+            .andExpect(jsonPath("$.data.applicationNo").isString())
+            .andExpect(jsonPath("$.data.merchantCode").value(merchantCode.toUpperCase()))
+            .andReturn();
+        long applicationId = json(applyResult).path("data").path("applicationId").asLong();
+        String applicationNo = json(applyResult).path("data").path("applicationNo").asText();
+
+        mockMvc.perform(post("/api/v1/merchant/apply")
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(applyBody))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.applicationId").value(applicationId));
+
+        mockMvc.perform(get("/api/v1/merchant/application/my")
+                .header(HttpHeaders.AUTHORIZATION, alice))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.applicationId").value(applicationId));
+
+        mockMvc.perform(get("/api/v1/web/merchant/applications")
+                .header(HttpHeaders.AUTHORIZATION, admin)
+                .param("applicationNo", applicationNo))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.list[0].applicationId").value(applicationId));
+
+        mockMvc.perform(get("/api/v1/web/merchant/applications/{applicationId}", applicationId)
+                .header(HttpHeaders.AUTHORIZATION, admin))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.merchantName").value(merchantName))
+            .andExpect(jsonPath("$.data.statusText").value("待审核"));
+
+        MvcResult auditResult = mockMvc.perform(put("/api/v1/web/merchant/applications/{applicationId}/audit", applicationId)
+                .header(HttpHeaders.AUTHORIZATION, admin)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"auditStatus\":1,\"warehouseIds\":[1],\"auditRemark\":\"approved\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value(1))
+            .andExpect(jsonPath("$.data.ownerId").isNumber())
+            .andExpect(jsonPath("$.data.ownerCode").value(merchantCode.toUpperCase()))
+            .andExpect(jsonPath("$.data.warehouseIds[0]").value(1))
+            .andReturn();
+        long ownerId = json(auditResult).path("data").path("ownerId").asLong();
+
+        MvcResult ownerList = mockMvc.perform(get("/api/v1/owner/list")
+                .header(HttpHeaders.AUTHORIZATION, admin))
+            .andExpect(status().isOk())
+            .andReturn();
+        org.junit.jupiter.api.Assertions.assertTrue(containsLong(json(ownerList).path("data"), "ownerId", ownerId));
+
+        MvcResult relogin = mockMvc.perform(post("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"username\":\"alice\",\"password\":\"alice123\"}"))
+            .andExpect(status().isOk())
+            .andReturn();
+        org.junit.jupiter.api.Assertions.assertTrue(
+            containsText(json(relogin).path("data").path("roles"), "seller"));
     }
 
     @Test
@@ -439,6 +547,15 @@ class BusinessApiControllerTests {
     private boolean containsLong(JsonNode list, String field, long value) {
         for (JsonNode item : list) {
             if (item.path(field).asLong(Long.MIN_VALUE) == value) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean containsText(JsonNode list, String value) {
+        for (JsonNode item : list) {
+            if (value.equals(item.asText())) {
                 return true;
             }
         }

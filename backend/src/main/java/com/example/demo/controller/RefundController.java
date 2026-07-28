@@ -1,7 +1,6 @@
 package com.example.demo.controller;
 
 import com.example.demo.common.Result;
-import com.example.demo.dto.AftersaleApplyRequest;
 import com.example.demo.dto.RefundAuditRequest;
 import com.example.demo.dto.RefundCompleteRequest;
 import com.example.demo.service.RefundService;
@@ -12,11 +11,8 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -30,17 +26,6 @@ public class RefundController {
 
     public RefundController(RefundService refundService) {
         this.refundService = refundService;
-    }
-
-    /** 用户提交售后（v1.2 §7.9） */
-    @PostMapping("/api/v1/order/aftersale")
-    public Result<RefundResponse> applyAftersale(@Valid @RequestBody AftersaleApplyRequest request,
-                                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new com.example.demo.exception.BusinessException(
-                com.example.demo.common.ApiErrorCode.BAD_REQUEST, "缺少 Idempotency-Key 请求头");
-        }
-        return Result.success("售后申请提交成功", refundService.applyAftersale(request, idempotencyKey));
     }
 
     /** 商家侧退款列表（v1.2 §7.11.1） */

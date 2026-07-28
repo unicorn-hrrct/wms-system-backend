@@ -1816,6 +1816,52 @@ Idempotency-Key: <uuid>
 - 仅 `status ∈ {2,3}` 的订单允许申请售后；
 - 提交后状态 `PENDING(0)`，需等商家审核。
 
+#### 7.9.1 商家侧售后列表
+
+```
+GET /web/aftersale
+```
+
+**权限：** `seller/admin`。
+
+**请求参数：**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| status | Integer | 否 | 状态筛选：0=待审核，1=已通过，2=已驳回 |
+| aftersaleNo | String | 否 | 售后单号 |
+| orderNo | String | 否 | 关联订单号 |
+| startDate | String | 否 | 申请开始时间 |
+| endDate | String | 否 | 申请结束时间 |
+| pageNum/pageSize | Integer | 否 | 分页 |
+
+#### 7.9.2 售后详情
+
+```
+GET /web/aftersale/{aftersaleId}
+```
+
+#### 7.9.3 商家审核售后
+
+```
+PUT /web/aftersale/{aftersaleId}/audit
+```
+
+**请求参数：**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| auditStatus | Integer | 是 | 1=通过，2=驳回 |
+| approvedAmount | BigDecimal | 否 | 审核通过金额，默认取申请金额，不得超过申请金额 |
+| approvedQuantity | Integer | 否 | 审核通过数量，退货退款时应大于 0 |
+| auditRemark | String | 条件必填 | 驳回时必填 |
+
+**业务约束：**
+
+- 仅 `PENDING(0)` 状态允许审核；
+- 通过后售后单状态变为 `APPROVED(1)`，并生成 `APPROVED(1)` 状态退款单，后续由 §7.11 执行退款；
+- 驳回后售后单状态变为 `REJECTED(2)`，不生成退款单。
+
 ---
 
 ### 7.10 后台发货
@@ -2667,6 +2713,100 @@ POST /scan/outbound
 
 ### 10.5 多仓库 / 多货主
 
+#### 10.5.0 商家入驻申请与审核
+
+> 普通用户提交入驻申请；后台管理员审核通过后，系统自动创建货主、绑定可经营仓库，并为申请账号授予 `seller` 角色。
+
+##### 10.5.0.1 提交商家入驻申请
+
+```
+POST /merchant/apply
+```
+
+**请求头：**
+
+| Header | 必填 | 说明 |
+|--------|------|------|
+| Idempotency-Key | 是 | 幂等键，重复提交返回同一申请 |
+
+**请求参数：**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| merchantName | String | 是 | 商家名称 |
+| merchantCode | String | 否 | 商家编码；不填则审核通过时自动生成 |
+| contactName | String | 是 | 联系人 |
+| contactPhone | String | 是 | 联系电话 |
+| contactEmail | String | 否 | 联系邮箱 |
+| licenseNo | String | 是 | 营业执照号 |
+| licenseImage | String | 否 | 营业执照图片地址 |
+| businessScope | String | 否 | 经营范围 |
+| address | String | 否 | 经营地址 |
+
+**响应核心字段：**
+
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| applicationId | Long | 申请ID |
+| applicationNo | String | 申请单号 |
+| status | Integer | 0 待审核 / 1 已通过 / 2 已驳回 |
+| ownerId | Long | 审核通过后生成的货主ID |
+| warehouseIds | Long[] | 审核通过后绑定的仓库ID |
+
+##### 10.5.0.2 我的商家入驻申请
+
+```
+GET /merchant/application/my
+```
+
+##### 10.5.0.3 后台商家入驻申请列表
+
+```
+GET /web/merchant/applications
+```
+
+**请求参数：**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| status | Integer | 否 | 0 待审核 / 1 已通过 / 2 已驳回 |
+| merchantName | String | 否 | 商家名称，模糊匹配 |
+| applicationNo | String | 否 | 申请单号，模糊匹配 |
+| startDate | DateTime | 否 | 申请开始时间 |
+| endDate | DateTime | 否 | 申请结束时间 |
+| pageNum | Integer | 否 | 页码，默认 1 |
+| pageSize | Integer | 否 | 每页条数，默认 10 |
+
+##### 10.5.0.4 商家入驻申请详情
+
+```
+GET /web/merchant/applications/{applicationId}
+```
+
+##### 10.5.0.5 审核商家入驻申请
+
+```
+PUT /web/merchant/applications/{applicationId}/audit
+```
+
+**请求参数：**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| auditStatus | Integer | 是 | 1 通过 / 2 驳回 |
+| merchantCode | String | 否 | 审核通过时指定商家编码；优先级高于申请时填写的编码 |
+| warehouseIds | Long[] | 否 | 审核通过后绑定的仓库ID |
+| auditRemark | String | 否 | 审核备注；驳回时必填 |
+
+**规则：**
+
+- 仅 `status=0` 的申请可审核；
+- 通过后创建 `own_owner` 货主记录，并写入 `sto_owner_warehouse` 仓库绑定；
+- 通过后为申请用户授予 `seller` 角色，用户重新登录后生效；
+- 商家编码会统一转为大写，并校验不能与已有货主或待审核/已通过申请重复。
+
+---
+
 #### 10.5.1 货主列表
 
 ```
@@ -2882,6 +3022,7 @@ PUT /restock/rule
 | **sales_outbox** | **本地消息表（v1.2 新增，Outbox 模式）** | **Sales** |
 | **mq_consume_log** | **MQ 消费幂等表（v1.2 新增）** | **跨模块** |
 | **mq_dead_letter** | **死信表（v1.2 新增）** | **跨模块** |
+| **mer_merchant_application** | **商家入驻申请表（v1.2 新增）** | **Catalog** |
 | own_owner | 货主表 | Catalog |
 | res_restock_suggestion | 补货建议表 | IVP |
 

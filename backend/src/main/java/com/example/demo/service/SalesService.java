@@ -38,7 +38,7 @@ public class SalesService {
     private final StockMutationService stockMutationService;
     private final StockReservationService stockReservationService;
     private final PaymentService paymentService;
-    private final RefundService refundService;
+    private final AftersaleService aftersaleService;
     private final CurrentUserProvider currentUser;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
@@ -47,7 +47,7 @@ public class SalesService {
                         StockMutationService stockMutationService,
                         StockReservationService stockReservationService,
                         PaymentService paymentService,
-                        RefundService refundService,
+                        AftersaleService aftersaleService,
                         CurrentUserProvider currentUser,
                         ObjectMapper objectMapper,
                         StringRedisTemplate redisTemplate) {
@@ -55,7 +55,7 @@ public class SalesService {
         this.stockMutationService = stockMutationService;
         this.stockReservationService = stockReservationService;
         this.paymentService = paymentService;
-        this.refundService = refundService;
+        this.aftersaleService = aftersaleService;
         this.currentUser = currentUser;
         this.objectMapper = objectMapper;
         this.redisTemplate = redisTemplate;
@@ -291,7 +291,9 @@ public class SalesService {
             try { stockReservationService.cancel(reservationId); }
             catch (Exception ignored) { /* 单条失败不影响主流程 */ }
         }
-        releaseOrderLocks(orderId, order, "order-cancel:");
+        if (reservations.isEmpty()) {
+            releaseOrderLocks(orderId, order, "order-cancel:");
+        }
         jdbcTemplate.update("UPDATE ord_order SET status=4,cancel_reason=?,update_time=CURRENT_TIMESTAMP WHERE id=?", reason, orderId);
         addTimeline(orderId, "订单取消");
         addOutbox("sales.order.cancelled", "ORDER_CANCELLED", orderId, Map.of("orderId", orderId, "orderNo", order.orderNo()));
@@ -319,14 +321,14 @@ public class SalesService {
     @Transactional
     public Map<String,Object> aftersale(Long orderId, Long orderItemId, Integer type, String reason,
                                         List<String> images, String remark, String idempotencyKey) {
-        // v1.2 §7.9：售后申请转 RefundService，校验可退金额/数量（50016）
+        // v1.2 §7.9：售后申请先落 ord_aftersale，商家审核后再生成退款单。
         AftersaleApplyRequest request = new AftersaleApplyRequest(
             orderId, orderItemId, type, reason, images, null, null, remark);
-        com.example.demo.vo.RefundResponse refund = refundService.applyAftersale(request, idempotencyKey);
+        com.example.demo.vo.AftersaleResponse aftersale = aftersaleService.apply(request, idempotencyKey);
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("aftersaleId", refund.refundId());
-        response.put("aftersaleNo", refund.refundNo());
-        response.put("status", refund.status());
+        response.put("aftersaleId", aftersale.aftersaleId());
+        response.put("aftersaleNo", aftersale.aftersaleNo());
+        response.put("status", aftersale.status());
         return response;
     }
 
@@ -345,7 +347,9 @@ public class SalesService {
                     try { stockReservationService.cancel(reservationId); }
                     catch (Exception ignored) { }
                 }
-                releaseOrderLocks(id, order, "order-expire:");
+                if (reservations.isEmpty()) {
+                    releaseOrderLocks(id, order, "order-expire:");
+                }
                 jdbcTemplate.update("UPDATE ord_order SET status=4,cancel_reason='支付超时自动取消',update_time=CURRENT_TIMESTAMP WHERE id=?", id);
                 addTimeline(id, "支付超时自动取消");
                 addOutbox("sales.order.cancelled", "ORDER_CANCELLED", id, Map.of("orderId",id,"orderNo",order.orderNo()));

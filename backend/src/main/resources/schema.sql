@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS res_restock_rule CASCADE;
 DROP TABLE IF EXISTS res_restock_suggestion CASCADE;
 DROP TABLE IF EXISTS sto_owner_warehouse CASCADE;
+DROP TABLE IF EXISTS mer_merchant_application CASCADE;
 DROP TABLE IF EXISTS own_owner CASCADE;
 DROP TABLE IF EXISTS msg_notification_read CASCADE;
 DROP TABLE IF EXISTS msg_notification CASCADE;
@@ -594,18 +595,30 @@ CREATE TABLE pay_nonce (
 );
 
 CREATE TABLE ord_aftersale (
-    id            BIGSERIAL PRIMARY KEY,
-    aftersale_no  VARCHAR(40) NOT NULL UNIQUE,
-    order_id      BIGINT NOT NULL REFERENCES ord_order(id),
-    order_item_id BIGINT NOT NULL REFERENCES ord_order_item(id),
-    user_id       BIGINT NOT NULL REFERENCES t_user(id),
-    type          INT NOT NULL,
-    reason        VARCHAR(500) NOT NULL,
-    images        TEXT,
-    remark        VARCHAR(500),
-    status        INT NOT NULL DEFAULT 0,
-    create_time   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id                    BIGSERIAL PRIMARY KEY,
+    aftersale_no          VARCHAR(40) NOT NULL UNIQUE,
+    order_id              BIGINT NOT NULL REFERENCES ord_order(id),
+    order_item_id         BIGINT NOT NULL REFERENCES ord_order_item(id),
+    user_id               BIGINT NOT NULL REFERENCES t_user(id),
+    customer_id           BIGINT NOT NULL REFERENCES crm_customer(id),
+    type                  INT NOT NULL,
+    reason                VARCHAR(500) NOT NULL,
+    images                TEXT,
+    remark                VARCHAR(500),
+    status                INT NOT NULL DEFAULT 0,
+    apply_refund_amount   NUMERIC(14,2) NOT NULL DEFAULT 0,
+    apply_refund_quantity INT NOT NULL DEFAULT 0,
+    approved_amount       NUMERIC(14,2),
+    approved_quantity     INT,
+    audit_remark          VARCHAR(500),
+    audited_at            TIMESTAMP,
+    refund_id             BIGINT,
+    idempotency_key       VARCHAR(120) UNIQUE,
+    create_time           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX idx_aftersale_status_time ON ord_aftersale(status, create_time DESC);
+CREATE INDEX idx_aftersale_order_item ON ord_aftersale(order_id, order_item_id);
 
 -- v1.2 §7.11 退款状态机：PENDING(0)/APPROVED(1)/REJECTED(2)/REFUNDING(3)/COMPLETED(4)/CANCELLED(5)
 CREATE TABLE ref_refund (
@@ -770,6 +783,31 @@ CREATE TABLE own_owner (
     create_time TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 商家入驻申请
+CREATE TABLE mer_merchant_application (
+    id             BIGSERIAL PRIMARY KEY,
+    application_no VARCHAR(40)  NOT NULL UNIQUE,
+    user_id        BIGINT       NOT NULL REFERENCES t_user(id),
+    merchant_name  VARCHAR(120) NOT NULL,
+    merchant_code  VARCHAR(50),
+    contact_name   VARCHAR(50)  NOT NULL,
+    contact_phone  VARCHAR(30)  NOT NULL,
+    contact_email  VARCHAR(100),
+    license_no     VARCHAR(80)  NOT NULL,
+    license_image  VARCHAR(255),
+    business_scope VARCHAR(500),
+    address        VARCHAR(255),
+    status         INT          NOT NULL DEFAULT 0,
+    audit_remark   VARCHAR(500),
+    audited_at     TIMESTAMP,
+    owner_id       BIGINT REFERENCES own_owner(id),
+    idempotency_key VARCHAR(120) UNIQUE,
+    create_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_merchant_application_status_time ON mer_merchant_application(status, create_time DESC);
+CREATE INDEX idx_merchant_application_user_time ON mer_merchant_application(user_id, create_time DESC);
 
 -- 货主与仓库的归属关系（10.5.2/3）
 CREATE TABLE sto_owner_warehouse (
