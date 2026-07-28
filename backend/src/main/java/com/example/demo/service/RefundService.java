@@ -8,6 +8,7 @@ import com.example.demo.entity.Refund;
 import com.example.demo.exception.BusinessException;
 import com.example.demo.mapper.RefundMapper;
 import com.example.demo.security.CurrentUserProvider;
+import com.example.demo.security.CustomerIdProvider;
 import com.example.demo.vo.RefundItemResponse;
 import com.example.demo.vo.RefundResponse;
 import org.springframework.dao.DuplicateKeyException;
@@ -33,19 +34,27 @@ public class RefundService {
     private final JdbcTemplate jdbcTemplate;
     private final RefundMapper refundMapper;
     private final CurrentUserProvider currentUser;
+    private final CustomerIdProvider customerIdProvider;
     private final StockReservationService stockReservationService;
     private final OutboxEventService outboxEventService;
 
     public RefundService(JdbcTemplate jdbcTemplate,
                          RefundMapper refundMapper,
                          CurrentUserProvider currentUser,
+                         CustomerIdProvider customerIdProvider,
                          StockReservationService stockReservationService,
                          OutboxEventService outboxEventService) {
         this.jdbcTemplate = jdbcTemplate;
         this.refundMapper = refundMapper;
         this.currentUser = currentUser;
+        this.customerIdProvider = customerIdProvider;
         this.stockReservationService = stockReservationService;
         this.outboxEventService = outboxEventService;
+    }
+
+    private Long requireCustomerId() {
+        Long customerId = customerIdProvider.getCurrentCustomerId();
+        return customerId == null ? currentUser.requireUserId() : customerId;
     }
 
     @Transactional
@@ -165,7 +174,7 @@ public class RefundService {
     public Map<String, Object> myList(Integer status, String refundNo, String orderNo,
                                      LocalDateTime startDate, LocalDateTime endDate,
                                      int pageNum, int pageSize) {
-        Long customerId = currentUser.requireUserId();
+        Long customerId = requireCustomerId();
         StringBuilder where = new StringBuilder("WHERE r.customer_id=?");
         List<Object> args = new ArrayList<>();
         args.add(customerId);
@@ -284,11 +293,11 @@ public class RefundService {
 
     @Transactional
     public void cancel(Long refundId) {
-        Long userId = currentUser.requireUserId();
+        Long customerId = requireCustomerId();
         int changed = jdbcTemplate.update("""
             UPDATE ref_refund SET status=5, update_time=CURRENT_TIMESTAMP
             WHERE id=? AND status=0 AND customer_id=?
-            """, refundId, userId);
+            """, refundId, customerId);
         if (changed == 0) {
             throw new BusinessException(ApiErrorCode.ORDER_STATE_INVALID, "仅本人 PENDING 单可取消");
         }

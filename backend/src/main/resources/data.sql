@@ -113,6 +113,23 @@ INSERT INTO crm_customer (id, user_id, nickname, phone, email, level) VALUES
 INSERT INTO crm_address (id, customer_id, receiver_name, receiver_phone, province, city, district, detail_address, is_default) VALUES
     (201, 5002, '李明', '13900139000', '广东省', '深圳市', '南山区', '科技园南路1号', TRUE);
 
+INSERT INTO crm_product_favorite (id, customer_id, product_id, create_time) VALUES
+    (1, 5002, 1002, '2026-07-22 10:00:00');
+
+INSERT INTO crm_browse_history (id, customer_id, product_id, sku_id, product_name, main_image, view_count, last_view_time, create_time, update_time) VALUES
+    (1, 5002, 1002, 2003, 'ThinkPad X1 Carbon', '/images/products/thinkpad-x1.jpg', 3, '2026-07-23 11:20:00', '2026-07-21 09:00:00', '2026-07-23 11:20:00');
+
+INSERT INTO cs_ticket (id, ticket_no, customer_id, user_id, subject, category, status, priority, assigned_to, last_message, last_message_time, create_time, update_time) VALUES
+    (1, 'CS202607230001', 5002, 2, 'Order delivery question', 'ORDER', 1, 1, 6, 'We are checking the logistics status.', '2026-07-23 14:20:00', '2026-07-23 14:00:00', '2026-07-23 14:20:00');
+
+INSERT INTO cs_ticket_message (id, ticket_id, sender_user_id, sender_type, content, images, create_time) VALUES
+    (1, 1, 2, 'CUSTOMER', 'When will my package arrive?', '[]', '2026-07-23 14:00:00'),
+    (2, 1, 6, 'AGENT', 'We are checking the logistics status.', '[]', '2026-07-23 14:20:00');
+
+INSERT INTO msg_notification (id, title, content, type, target_type, target_user_id, target_role_key, sender_id, biz_type, biz_id, status, publish_time, expire_time) VALUES
+    (1, 'System maintenance', 'The service will be upgraded tonight.', 'SYSTEM', 'ALL', NULL, NULL, 1, 'SYSTEM', 'MAINT-20260723', 1, '2026-07-23 09:00:00', NULL),
+    (2, 'Order reminder', 'Your order has a new status update.', 'ORDER', 'USER', 2, NULL, 1, 'ORDER', '10001', 1, '2026-07-23 10:00:00', NULL);
+
 INSERT INTO sto_stock_alert_rule (id, sku_id, min_alert, max_alert, enabled) VALUES
     (1, 2001, 20, 500, TRUE),
     (2, 2002, 20, 500, TRUE),
@@ -164,6 +181,12 @@ SELECT setval('sto_stock_log_id_seq', (SELECT MAX(id) FROM sto_stock_log));
 SELECT setval('pur_supplier_id_seq', (SELECT MAX(id) FROM pur_supplier));
 SELECT setval('crm_customer_id_seq', (SELECT MAX(id) FROM crm_customer));
 SELECT setval('crm_address_id_seq', (SELECT MAX(id) FROM crm_address));
+SELECT setval('crm_product_favorite_id_seq', (SELECT MAX(id) FROM crm_product_favorite));
+SELECT setval('crm_browse_history_id_seq', (SELECT MAX(id) FROM crm_browse_history));
+SELECT setval('cs_ticket_id_seq', (SELECT MAX(id) FROM cs_ticket));
+SELECT setval('cs_ticket_message_id_seq', (SELECT MAX(id) FROM cs_ticket_message));
+SELECT setval('msg_notification_id_seq', (SELECT MAX(id) FROM msg_notification));
+SELECT setval('msg_notification_read_id_seq', 1, FALSE);
 SELECT setval('sto_stock_alert_rule_id_seq', (SELECT MAX(id) FROM sto_stock_alert_rule));
 SELECT setval('sys_dict_type_id_seq', (SELECT MAX(id) FROM sys_dict_type));
 SELECT setval('sys_dict_data_id_seq', (SELECT MAX(id) FROM sys_dict_data));

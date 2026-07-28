@@ -174,6 +174,7 @@ public class SalesService {
         if (cartItemIds == null || cartItemIds.isEmpty()) throw new BusinessException(ApiErrorCode.BAD_REQUEST, "购物车项不能为空");
 
         Map<String, Object> address = requireAddress(addressId, userId);
+        Long customerId = ((Number) address.get("customerId")).longValue();
         String placeholders = String.join(",", cartItemIds.stream().map(id -> "?").toList());
         List<Object> args = new ArrayList<>();
         args.add(userId); args.addAll(cartItemIds);
@@ -196,10 +197,10 @@ public class SalesService {
         Long orderId;
         try {
             orderId = jdbcTemplate.queryForObject("""
-                INSERT INTO ord_order(order_no,user_id,address_id,address_snapshot,total_amount,pay_amount,
+                INSERT INTO ord_order(order_no,user_id,customer_id,address_id,address_snapshot,total_amount,pay_amount,
                                       status,remark,idempotency_key,expire_time)
-                VALUES (?,?,?,CAST(? AS jsonb),?,?,0,?,?,?) RETURNING id
-                """, Long.class, orderNo, userId, addressId, json(address), total, total, remark, idempotencyKey, expireTime);
+                VALUES (?,?,?,?,CAST(? AS jsonb),?,?,0,?,?,?) RETURNING id
+                """, Long.class, orderNo, userId, customerId, addressId, json(address), total, total, remark, idempotencyKey, expireTime);
         } catch (DuplicateKeyException ex) {
             return jdbcTemplate.queryForObject("SELECT * FROM ord_order WHERE user_id=? AND idempotency_key=?", this::orderSummaryRow, userId, idempotencyKey);
         }
@@ -379,8 +380,13 @@ public class SalesService {
     }
 
     private Map<String,Object> requireAddress(Long addressId,Long userId) {
-        List<Map<String,Object>> rows=jdbcTemplate.query("SELECT * FROM crm_address WHERE id=? AND user_id=? AND deleted=0",(rs,rowNum)->{
-            Map<String,Object> map=new LinkedHashMap<>(); map.put("receiverName",rs.getString("receiver_name")); map.put("receiverPhone",rs.getString("receiver_phone"));
+        List<Map<String,Object>> rows=jdbcTemplate.query("""
+            SELECT a.id, a.customer_id, a.receiver_name, a.receiver_phone, a.province, a.city, a.district, a.detail_address
+            FROM crm_address a
+            JOIN crm_customer c ON c.id = a.customer_id
+            WHERE a.id=? AND c.user_id=? AND a.deleted=0 AND c.deleted=0
+            """,(rs,rowNum)->{
+            Map<String,Object> map=new LinkedHashMap<>(); map.put("customerId",rs.getLong("customer_id")); map.put("receiverName",rs.getString("receiver_name")); map.put("receiverPhone",rs.getString("receiver_phone"));
             map.put("province",rs.getString("province")); map.put("city",rs.getString("city")); map.put("district",rs.getString("district")); map.put("detailAddress",rs.getString("detail_address"));
             map.put("fullAddress",rs.getString("province")+rs.getString("city")+rs.getString("district")+rs.getString("detail_address")); return map;
         },addressId,userId);

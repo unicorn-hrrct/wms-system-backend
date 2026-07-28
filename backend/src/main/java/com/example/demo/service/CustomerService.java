@@ -84,7 +84,21 @@ public class CustomerService {
         sql.append(" WHERE id=? AND deleted=0");
         args.add(customerId);
         jdbcTemplate.update(sql.toString(), args.toArray());
-        return getOrCreateCurrent();
+        return loadCustomer(customerId);
+    }
+
+    private CustomerResponse loadCustomer(Long customerId) {
+        return jdbcTemplate.queryForObject("""
+            SELECT id, user_id, nickname, phone, email, level, registered_at
+            FROM crm_customer WHERE id=? AND deleted=0
+            """, (rs, rowNum) -> new CustomerResponse(
+            rs.getLong("id"),
+            rs.getLong("user_id"),
+            rs.getString("nickname"),
+            rs.getString("phone"),
+            rs.getString("email"),
+            rs.getString("level"),
+            rs.getTimestamp("registered_at").toLocalDateTime()), customerId);
     }
 
     private CustomerResponse toResponse(Customer customer) {

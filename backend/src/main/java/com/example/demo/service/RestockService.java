@@ -121,12 +121,12 @@ public class RestockService {
         Map<Long, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         for (Long skuId : suggestionIds) {
             Map<String, Object> data = jdbcTemplate.queryForObject("""
-                SELECT k.sku_id, COALESCE(MIN(sup.id),0) supplier_id, COALESCE(MIN(sup.supplier_name),'默认供应商') supplier_name,
+                SELECT k.id sku_id, COALESCE(MIN(sup.id),0) supplier_id, COALESCE(MIN(sup.supplier_name),'默认供应商') supplier_name,
                        50 quantity, k.sku_code, p.product_name, COALESCE(p.purchase_price,0) price
                 FROM pro_sku k JOIN pro_product p ON p.id=k.product_id
                 LEFT JOIN pur_supplier sup ON sup.status=0
                 WHERE k.id = ?
-                GROUP BY k.sku_id, k.sku_code, p.product_name, p.purchase_price
+                GROUP BY k.id, k.sku_code, p.product_name, p.purchase_price
                 """, (rs, rowNum) -> {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("skuId", rs.getLong("sku_id"));
@@ -151,6 +151,7 @@ public class RestockService {
         for (Map.Entry<Long, List<Map<String, Object>>> entry : grouped.entrySet()) {
             Long supplierId = entry.getKey();
             List<Map<String, Object>> items = entry.getValue();
+            String requestNo = businessNo("AUTO_PR");
             String orderNo = merge ? businessNo("AUTO_PO") : businessNo("AUTO_PO");
             BigDecimal totalAmount = BigDecimal.ZERO;
             List<Map<String, Object>> orderItems = new ArrayList<>();
@@ -167,10 +168,25 @@ public class RestockService {
                 oi.put("estimatedAmount", subtotal);
                 orderItems.add(oi);
             }
+            Long operatorId = currentUser.requireUserId();
+            Long requestId = jdbcTemplate.queryForObject("""
+                INSERT INTO pur_request(request_no, supplier_id, applicant_id, total_amount, status,
+                                        remark, auditor_id, audit_remark, audit_time)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING id
+                """, Long.class, requestNo, supplierId, operatorId, totalAmount,
+                "自动补货生成采购申请", operatorId, "自动审核通过");
+            for (Map<String, Object> oi : orderItems) {
+                BigDecimal price = ((BigDecimal) oi.get("estimatedAmount"))
+                    .divide(BigDecimal.valueOf((Integer) oi.get("quantity")), 2, RoundingMode.HALF_UP);
+                jdbcTemplate.update("""
+                    INSERT INTO pur_request_item(request_id, sku_id, sku_code, quantity, expected_price, remark)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, requestId, oi.get("skuId"), oi.get("skuCode"), oi.get("quantity"), price, "自动补货");
+            }
             Long orderId = jdbcTemplate.queryForObject("""
                 INSERT INTO pur_order(order_no, request_id, supplier_id, total_amount, status)
-                VALUES (?, NULL, ?, ?, 0) RETURNING id
-                """, Long.class, orderNo, supplierId, totalAmount);
+                VALUES (?, ?, ?, ?, 0) RETURNING id
+                """, Long.class, orderNo, requestId, supplierId, totalAmount);
             for (Map<String, Object> oi : orderItems) {
                 jdbcTemplate.update("""
                     INSERT INTO pur_order_item(order_id, sku_id, sku_code, quantity, price)
@@ -178,17 +194,22 @@ public class RestockService {
                     """, orderId, oi.get("skuId"), oi.get("skuCode"), oi.get("quantity"),
                     ((BigDecimal) oi.get("estimatedAmount")).divide(BigDecimal.valueOf((Integer) oi.get("quantity")), 2, RoundingMode.HALF_UP));
             }
-            jdbcTemplate.update("""
-                INSERT INTO res_restock_suggestion(sku_id, sku_code, product_name, current_stock, safety_stock,
-                                                  avg_daily_sales, days_remaining, suggested_quantity,
-                                                  suggested_supplier_id, suggested_supplier_name, status)
-                VALUES (?, ?, ?, 0, 0, 0, 0, 0, ?, ?, 1)
-                ON CONFLICT DO NOTHING
-                """);
+            for (Map<String, Object> item : items) {
+                jdbcTemplate.update("""
+                    INSERT INTO res_restock_suggestion(sku_id, sku_code, product_name, current_stock, safety_stock,
+                                                      avg_daily_sales, days_remaining, suggested_quantity,
+                                                      suggested_supplier_id, suggested_supplier_name, status)
+                    VALUES (?, ?, ?, 0, 0, 0, 0, ?, ?, ?, 1)
+                    """,
+                    item.get("skuId"), item.get("skuCode"), item.get("productName"), item.get("quantity"),
+                    supplierId, item.get("supplierName"));
+            }
 
             Map<String, Object> generatedRow = new LinkedHashMap<>();
             generatedRow.put("orderId", orderId);
             generatedRow.put("orderNo", orderNo);
+            generatedRow.put("requestId", requestId);
+            generatedRow.put("requestNo", requestNo);
             generatedRow.put("supplierId", supplierId);
             generatedRow.put("supplierName", items.getFirst().get("supplierName"));
             generatedRow.put("items", orderItems);

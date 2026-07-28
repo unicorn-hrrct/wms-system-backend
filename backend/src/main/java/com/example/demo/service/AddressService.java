@@ -44,7 +44,8 @@ public class AddressService {
 
     public List<Map<String, Object>> list() {
         return jdbcTemplate.query("""
-            SELECT id, customer_id, receiver_name, receiver_phone, province, city, district, detail_address, is_default, create_time
+            SELECT id, customer_id, receiver_name, receiver_phone, province, city, district, detail_address,
+                   is_default, create_time, update_time
             FROM crm_address
             WHERE customer_id = ? AND deleted = 0
             ORDER BY is_default DESC, create_time DESC, id DESC

@@ -77,7 +77,7 @@ public class OrderMessageService {
                 case "ORDER_CANCELLED" -> "sales.order.cancelled";
                 default -> throw new BusinessException(ApiErrorCode.BAD_REQUEST, "eventType 非法");
             };
-            rabbitTemplate.convertAndSend(RabbitMqConfig.EXCHANGE, routingKey, envelope, postProcess(messageId));
+            rabbitTemplate.convertAndSend(RabbitMqConfig.EXCHANGE, routingKey, body, postProcess(messageId));
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("messageId", messageId);
             response.put("eventType", eventType);

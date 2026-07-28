@@ -41,7 +41,7 @@ public class OrderController {
     @PostMapping("/{orderId}/pay")
     public Result<Map<String, Object>> pay(@PathVariable @Min(1) Long orderId,
                                            @Valid @RequestBody OrderPayRequest request) {
-        return Result.success("支付成功", service.pay(orderId, request.payType()));
+        return Result.success("预支付创建成功", service.pay(orderId, request.payType()));
     }
 
     @GetMapping("/{orderId}")
@@ -68,17 +68,6 @@ public class OrderController {
         return Result.success("确认收货成功", null);
     }
 
-    @PostMapping("/aftersale")
-    public Result<Map<String, Object>> aftersale(@Valid @RequestBody AftersaleRequest request,
-                                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            throw new com.example.demo.exception.BusinessException(
-                com.example.demo.common.ApiErrorCode.BAD_REQUEST, "缺少 Idempotency-Key 请求头");
-        }
-        return Result.success("售后申请提交成功", service.aftersale(request.orderId(), request.orderItemId(), request.type(),
-            request.reason(), request.images(), request.remark(), idempotencyKey));
-    }
-
     @PostMapping("/{orderId}/ship")
     @PreAuthorize("hasAnyRole('ADMIN','SELLER')")
     public Result<Void> ship(@PathVariable @Min(1) Long orderId, @Valid @RequestBody OrderShipRequest request) {
@@ -96,14 +85,6 @@ public class OrderController {
     }
 
     public record OrderCancelRequest(@NotBlank String cancelReason) {
-    }
-
-    public record AftersaleRequest(@NotNull Long orderId,
-                                   @NotNull Long orderItemId,
-                                   @NotNull @Min(1) @Max(2) Integer type,
-                                   @NotBlank String reason,
-                                   List<String> images,
-                                   String remark) {
     }
 
     public record OrderShipRequest(@NotBlank String logisticsCompany, @NotBlank String logisticsNo) {

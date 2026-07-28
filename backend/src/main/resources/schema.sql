@@ -2,6 +2,12 @@ DROP TABLE IF EXISTS res_restock_rule CASCADE;
 DROP TABLE IF EXISTS res_restock_suggestion CASCADE;
 DROP TABLE IF EXISTS sto_owner_warehouse CASCADE;
 DROP TABLE IF EXISTS own_owner CASCADE;
+DROP TABLE IF EXISTS msg_notification_read CASCADE;
+DROP TABLE IF EXISTS msg_notification CASCADE;
+DROP TABLE IF EXISTS cs_ticket_message CASCADE;
+DROP TABLE IF EXISTS cs_ticket CASCADE;
+DROP TABLE IF EXISTS crm_browse_history CASCADE;
+DROP TABLE IF EXISTS crm_product_favorite CASCADE;
 DROP TABLE IF EXISTS ord_message_log CASCADE;
 DROP TABLE IF EXISTS mq_consume_log CASCADE;
 DROP TABLE IF EXISTS sys_consumed_event CASCADE;
@@ -441,6 +447,89 @@ CREATE TABLE crm_cart (
     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, sku_id)
 );
+
+CREATE TABLE crm_product_favorite (
+    id          BIGSERIAL PRIMARY KEY,
+    customer_id BIGINT NOT NULL REFERENCES crm_customer(id) ON DELETE CASCADE,
+    product_id  BIGINT NOT NULL REFERENCES pro_product(id) ON DELETE CASCADE,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(customer_id, product_id)
+);
+CREATE INDEX idx_favorite_customer_time ON crm_product_favorite(customer_id, create_time DESC);
+
+CREATE TABLE crm_browse_history (
+    id             BIGSERIAL PRIMARY KEY,
+    customer_id    BIGINT NOT NULL REFERENCES crm_customer(id) ON DELETE CASCADE,
+    product_id     BIGINT NOT NULL REFERENCES pro_product(id) ON DELETE CASCADE,
+    sku_id         BIGINT REFERENCES pro_sku(id) ON DELETE SET NULL,
+    product_name   VARCHAR(150) NOT NULL,
+    main_image     VARCHAR(255),
+    view_count     INT NOT NULL DEFAULT 1 CHECK (view_count > 0),
+    last_view_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    create_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(customer_id, product_id)
+);
+CREATE INDEX idx_history_customer_time ON crm_browse_history(customer_id, last_view_time DESC);
+CREATE INDEX idx_history_product ON crm_browse_history(product_id);
+
+CREATE TABLE cs_ticket (
+    id                BIGSERIAL PRIMARY KEY,
+    ticket_no         VARCHAR(40) NOT NULL UNIQUE,
+    customer_id       BIGINT NOT NULL REFERENCES crm_customer(id) ON DELETE CASCADE,
+    user_id           BIGINT NOT NULL REFERENCES t_user(id) ON DELETE CASCADE,
+    subject           VARCHAR(120) NOT NULL,
+    category          VARCHAR(40) NOT NULL DEFAULT 'GENERAL',
+    status            INT NOT NULL DEFAULT 0,
+    priority          INT NOT NULL DEFAULT 1,
+    assigned_to       BIGINT REFERENCES t_user(id),
+    last_message      VARCHAR(500),
+    last_message_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    create_time       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_ticket_customer_status_time ON cs_ticket(customer_id, status, update_time DESC);
+CREATE INDEX idx_ticket_status_time ON cs_ticket(status, update_time DESC);
+
+CREATE TABLE cs_ticket_message (
+    id             BIGSERIAL PRIMARY KEY,
+    ticket_id      BIGINT NOT NULL REFERENCES cs_ticket(id) ON DELETE CASCADE,
+    sender_user_id BIGINT NOT NULL REFERENCES t_user(id),
+    sender_type    VARCHAR(16) NOT NULL,
+    content        VARCHAR(1000) NOT NULL,
+    images         TEXT,
+    create_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_ticket_message_ticket_time ON cs_ticket_message(ticket_id, create_time ASC, id ASC);
+
+CREATE TABLE msg_notification (
+    id              BIGSERIAL PRIMARY KEY,
+    title           VARCHAR(120) NOT NULL,
+    content         VARCHAR(1000) NOT NULL,
+    type            VARCHAR(32) NOT NULL DEFAULT 'SYSTEM',
+    target_type     VARCHAR(16) NOT NULL DEFAULT 'ALL',
+    target_user_id  BIGINT REFERENCES t_user(id) ON DELETE CASCADE,
+    target_role_key VARCHAR(50),
+    sender_id       BIGINT REFERENCES t_user(id),
+    biz_type        VARCHAR(50),
+    biz_id          VARCHAR(80),
+    status          INT NOT NULL DEFAULT 1,
+    publish_time    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expire_time     TIMESTAMP,
+    create_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_notification_publish ON msg_notification(status, publish_time DESC);
+CREATE INDEX idx_notification_user ON msg_notification(target_user_id, publish_time DESC);
+CREATE INDEX idx_notification_role ON msg_notification(target_role_key, publish_time DESC);
+
+CREATE TABLE msg_notification_read (
+    id              BIGSERIAL PRIMARY KEY,
+    notification_id BIGINT NOT NULL REFERENCES msg_notification(id) ON DELETE CASCADE,
+    user_id         BIGINT NOT NULL REFERENCES t_user(id) ON DELETE CASCADE,
+    read_time       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(notification_id, user_id)
+);
+CREATE INDEX idx_notification_read_user ON msg_notification_read(user_id, read_time DESC);
 
 CREATE TABLE ord_order (
     id               BIGSERIAL PRIMARY KEY,

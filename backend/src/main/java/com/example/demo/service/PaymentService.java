@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -206,15 +207,18 @@ public class PaymentService {
             SELECT p.pay_no, p.order_id, p.pay_type, p.pay_status, p.pay_amount, p.provider_transaction_no,
                    p.callback_received_at, p.pay_time, p.expire_time
             FROM pay_payment p WHERE p.pay_no=?
-            """, (rs, rowNum) -> Map.<String, Object>of(
-            "payNo", rs.getString("pay_no"),
-            "orderId", rs.getLong("order_id"),
-            "payType", rs.getInt("pay_type"),
-            "payStatus", rs.getInt("pay_status"),
-            "payAmount", rs.getBigDecimal("pay_amount"),
-            "providerTransactionNo", rs.getString("provider_transaction_no"),
-            "paidAt", rs.getTimestamp("pay_time"),
-            "expireTime", rs.getTimestamp("expire_time")),
+            """, (rs, rowNum) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("payNo", rs.getString("pay_no"));
+            row.put("orderId", rs.getLong("order_id"));
+            row.put("payType", rs.getInt("pay_type"));
+            row.put("payStatus", rs.getInt("pay_status"));
+            row.put("payAmount", rs.getBigDecimal("pay_amount"));
+            row.put("providerTransactionNo", rs.getString("provider_transaction_no"));
+            row.put("paidAt", rs.getTimestamp("pay_time"));
+            row.put("expireTime", rs.getTimestamp("expire_time"));
+            return row;
+        },
             payNo);
         if (rows.isEmpty()) {
             throw new BusinessException(ApiErrorCode.NOT_FOUND, "支付单不存在");
