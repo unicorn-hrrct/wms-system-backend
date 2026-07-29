@@ -33,7 +33,7 @@
 旧个人 `origin/sales` 仅用于提取已经验证的 Customer、Address、Refund 约束，不作为
 本次 PR 的合并基线，也不会用它覆盖组长在 `5dc682e` 新增的售后接口。
 
-## 4. 计划结构
+## 4. 交付结构
 
 ```text
 sales/
@@ -63,5 +63,10 @@ git diff --name-only upstream/sales...HEAD
 
 ## 6. 当前状态
 
-本文件只建立交付边界。Customer、Address、Refund 源码、增量 SQL、测试和售后适配须
-在后续原子提交完成并验证后，才能在 `MANIFEST.md` 中标记为已交付。
+截至 2026-07-29，Customer、Address、Aftersale/Refund 分类源码、增量 SQL 和测试均
+已放入本目录。验证结果和集成限制记录在 `INTEGRATION.md`，文件级交付状态记录在
+`MANIFEST.md`。
+
+“已交付”表示分类覆盖包已实现并在临时覆盖环境验证，不表示已经写入团队
+`backend/`，也不表示 RabbitMQ/IVP 消费端已联调完成。是否合入统一后端由组长在
+代码 PR 中审查决定。
