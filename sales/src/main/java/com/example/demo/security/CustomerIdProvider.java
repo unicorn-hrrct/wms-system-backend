@@ -38,6 +38,14 @@ public class CustomerIdProvider {
             """);
     }
 
+    /**
+     * 兼容团队基线中尚未迁移到 require API 的调用方。
+     * 客户档案不存在时仍抛出 404，绝不回退为账号 userId。
+     */
+    public Long getCurrentCustomerId() {
+        return requireCurrentCustomerId();
+    }
+
     private long queryCurrentCustomerId(String sql) {
         Long userId = currentUser.requireUserId();
         try {
