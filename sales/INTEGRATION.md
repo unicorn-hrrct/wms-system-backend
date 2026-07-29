@@ -87,8 +87,8 @@ PUT  /api/v1/web/aftersale/{aftersaleId}/audit
 
 结果：
 
-- 分类契约测试：23/23，通过；其中 PostgreSQL 迁移重复执行 1/1，真实 HTTP 回归
-  2/2，DTO/Controller/Service 契约测试 20/20。
+- 分类契约测试：28/28，通过；其中 PostgreSQL 幂等事务边界 5/5、迁移重复执行
+  1/1、真实 HTTP 回归 2/2，DTO/Controller/Service 契约测试 20/20。
 - 项目级非破坏性回归（不重复执行上面的迁移和 HTTP 两类破坏性测试）：45/45，通过；
   运行前已加载团队 Schema、数据和 V001，并关闭 Spring 重复初始化，
   `mvn clean test` 重新编译 171 个主源码文件。
@@ -98,15 +98,15 @@ PUT  /api/v1/web/aftersale/{aftersaleId}/audit
 - RabbitMQ `localhost:5672` 未运行，日志存在连接拒绝；Outbox 事务落库与事件载荷已
   验证，真实消息发布和 IVP 消费未验证。
 
-分类测试命令需要显式启用真实 PostgreSQL 测试，并把
-`sales.postgres.target-url` 指向可清空的测试库：
+分类测试命令需要显式启用真实 PostgreSQL 测试，把
+`sales.postgres.target-url` 指向可清空的测试库，并明确确认允许修改该目标：
 
 ```text
-mvn -Dtest=SalesWriteIdempotencyHeaderTest,AftersaleRefundRequestValidationTest,SalesOverlayMigrationTest,AftersaleServiceContractTest,CustomerAddressServiceContractTest,RefundServiceContractTest,CustomerAddressAftersaleRefundHttpIntegrationTest -Dsales.postgres.integration=true -Dsales.postgres.target-url=<disposable-jdbc-url> test
+mvn -Dtest=SalesWriteIdempotencyHeaderTest,AftersaleRefundRequestValidationTest,SalesOverlayMigrationTest,AftersaleServiceContractTest,CustomerAddressServiceContractTest,RefundServiceContractTest,CustomerAddressAftersaleRefundHttpIntegrationTest,SalesIdempotencyPostgresIntegrationTest -Dsales.postgres.integration=true -Dsales.postgres.allow-destructive-target=true -Dsales.postgres.target-url=<disposable-jdbc-url> test
 ```
 
-`SalesOverlayMigrationTest` 会清空目标库中的团队表；禁止把生产数据库作为
-`sales.postgres.target-url`。
+`SalesOverlayMigrationTest` 会清空目标库中的团队表，幂等事务测试也会执行 V001
+并创建、删除专用探针表；禁止把生产或共享数据库作为 `sales.postgres.target-url`。
 
 ## 7. 尚未冻结或尚未联调的边界
 

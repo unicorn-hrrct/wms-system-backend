@@ -66,6 +66,7 @@
 - `service/AftersaleServiceContractTest.java`
 - `service/CustomerAddressServiceContractTest.java`
 - `service/RefundServiceContractTest.java`
+- `service/SalesIdempotencyPostgresIntegrationTest.java`
 
 上述相对路径均位于 `sales/src/test/java/com/example/demo/`。HTTP 与迁移测试会重建
 指定测试库，必须使用可丢弃数据库。
