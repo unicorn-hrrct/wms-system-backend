@@ -100,7 +100,7 @@ powershell -ExecutionPolicy Bypass -File sales/scripts/Test-SalesPrScope.ps1
 
 ## 8. 分类验证门禁
 
-`Invoke-SalesClassificationVerification.ps1` 把当前 8 类 28 项定向验证固化为可复现
+`Invoke-SalesClassificationVerification.ps1` 把当前 8 类 31 项定向验证固化为可复现
 门禁，并可通过 `-IncludeProjectRegression` 追加项目级回归。它只接受独立的
 `.tmp-sales-integration-*` / `.tmp-sales-verification-*` 工作树，拒绝团队真实
 `backend/`，并逐文件核对 21 个主源码、8 个测试、V001 迁移及已审查的
@@ -110,15 +110,15 @@ powershell -ExecutionPolicy Bypass -File sales/scripts/Test-SalesPrScope.ps1
 库；该库会被测试清空，调用者必须逐字传入 `DESTROY:<JDBC URL>`。先使用 `-DryRun`
 完成路径、Git、工具链和危险目标检查；干跑不会连接端口或执行 Maven。默认正式运行
 会先做 Java 21 干净编译，再运行固定 8 类，并精确核对 8 份 Surefire XML 是否为
-28 tests / 0 failures / 0 errors / 0 skipped。
+31 tests / 0 failures / 0 errors / 0 skipped。
 
 启用 `-IncludeProjectRegression` 后，脚本还会先用固定迁移测试重置专用库并核对
-1/1，再关闭 Spring SQL 自动初始化，运行固定 10 类项目回归并精确核对 45/45。
+1/1，再关闭 Spring SQL 自动初始化，运行固定 10 类项目回归并精确核对 48/48。
 每个阶段都从 `clean` 后的独立 Surefire 报告集验收，避免 Maven 选择器拼写错误被
 静默漏跑，也避免读取上一轮报告。项目回归仍会写入专用测试库，不是只读检查。
 
-分类验证与项目回归有 5 类、20 项重复覆盖；去重后合计为 13 类、53 项不同测试，
-不能把阶段执行次数相加宣称为 73 项不同测试。单独的 1/1 重置阶段用于准备数据库，
+分类验证与项目回归有 5 类、23 项重复覆盖；去重后合计为 13 类、56 项不同测试，
+不能把阶段执行次数相加宣称为 79 项不同测试。单独的 1/1 重置阶段用于准备数据库，
 也不增加功能覆盖数。
 
 密码参数使用 `SecureString`，脚本只通过子进程环境传递并对 Maven 输出脱敏。示例：
@@ -143,7 +143,7 @@ $redisPassword = Read-Host 'Redis password' -AsSecureString
   -DryRun
 ```
 
-删除 `-DryRun` 才会执行验证；如只需默认 8 类 28 项分类门禁，同时删除
+删除 `-DryRun` 才会执行验证；如只需默认 8 类 31 项分类门禁，同时删除
 `-IncludeProjectRegression`。脚本只证明分类源码、真实 PostgreSQL 事务边界和
 Outbox 落库；测试过程即使出现 RabbitMQ 连接拒绝日志，也不构成消息链路验证。
 脚本不会验证 RabbitMQ 发布、重试、死信及 IVP 消费。
