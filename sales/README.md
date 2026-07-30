@@ -43,6 +43,7 @@ sales/
 ├── INTEGRATION.md
 ├── MANIFEST.md
 ├── scripts/
+│   ├── Invoke-SalesClassificationVerification.ps1
 │   └── Test-SalesPrScope.ps1
 ├── sql/
 │   └── V001__customer_address_refund.sql
@@ -96,3 +97,40 @@ powershell -ExecutionPolicy Bypass -File sales/scripts/Test-SalesPrScope.ps1
 - `git diff --check` 无空白错误。
 
 脚本不会执行 `fetch`、提交、推送或创建 PR；远端拉取仍须在运行门禁前显式完成。
+
+## 8. 分类验证门禁
+
+`Invoke-SalesClassificationVerification.ps1` 把当前 8 类 28 项定向验证固化为可复现
+门禁。它只接受独立的 `.tmp-sales-integration-*` / `.tmp-sales-verification-*`
+工作树，拒绝团队真实 `backend/`，并逐文件核对 21 个主源码、8 个测试、V001 迁移及
+已审查的 `BusinessApiControllerTests` 编译兼容改动。
+
+脚本仅允许本机非默认端口和专用 `sales_verify_*` / `sales_validation_*` PostgreSQL
+库；该库会被测试清空，调用者必须逐字传入 `DESTROY:<JDBC URL>`。先使用 `-DryRun`
+完成路径、Git、工具链和危险目标检查；干跑不会连接端口或执行 Maven。正式运行会先
+做 Java 21 干净编译，再运行固定 8 类，并精确核对 8 份 Surefire XML 是否为
+28 tests / 0 failures / 0 errors / 0 skipped。
+
+密码参数使用 `SecureString`，脚本只通过子进程环境传递并对 Maven 输出脱敏。示例：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+$pgUrl = 'jdbc:postgresql://127.0.0.1:55432/sales_verify_20260730'
+$pgPassword = Read-Host 'PostgreSQL password' -AsSecureString
+$redisPassword = Read-Host 'Redis password' -AsSecureString
+& .\sales\scripts\Invoke-SalesClassificationVerification.ps1 `
+  -BackendDirectory '..\.tmp-sales-integration-20260729\backend' `
+  -PostgresUrl $pgUrl `
+  -PostgresUser postgres `
+  -PostgresPassword $pgPassword `
+  -RedisHost 127.0.0.1 `
+  -RedisPort 56379 `
+  -RedisPassword $redisPassword `
+  -JdkHome 'D:\Java\jdk-21.0.11+10' `
+  -MavenCommand '<absolute-path-to-mvn.cmd>' `
+  -DestructiveTargetConfirmation "DESTROY:$pgUrl" `
+  -DryRun
+```
+
+删除 `-DryRun` 才会执行验证。脚本只证明分类源码、真实 PostgreSQL 事务边界和
+Outbox 落库；它不会启动或验证 RabbitMQ 发布、重试、死信及 IVP 消费。
