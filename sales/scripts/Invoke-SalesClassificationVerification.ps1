@@ -1,4 +1,4 @@
-# Runs the fixed Customer/Address/Aftersale/Refund verification suite safely.
+# Runs the fixed Sales classification suite and optional project regression safely.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -32,13 +32,15 @@ param(
     [string]$ExpectedBackendHead =
         '5dc682ee958ced73a741954cb514d3b7e6ce6bcb',
 
+    [switch]$IncludeProjectRegression,
+
     [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:ExpectedTests = @(
+$script:ExpectedClassificationTests = @(
     [PSCustomObject]@{
         ShortName = 'SalesWriteIdempotencyHeaderTest'
         ClassName = 'com.example.demo.controller.SalesWriteIdempotencyHeaderTest'
@@ -80,7 +82,68 @@ $script:ExpectedTests = @(
         Tests = 5
     }
 )
-$script:ExpectedTotalTests = 28
+$script:ExpectedClassificationTotalTests = 28
+$script:ExpectedResetTests = @(
+    [PSCustomObject]@{
+        ShortName = 'SalesOverlayMigrationTest'
+        ClassName = 'com.example.demo.schema.SalesOverlayMigrationTest'
+        Tests = 1
+    }
+)
+$script:ExpectedResetTotalTests = 1
+$script:ExpectedProjectTests = @(
+    [PSCustomObject]@{
+        ShortName = 'DemoApplicationTests'
+        ClassName = 'com.example.demo.DemoApplicationTests'
+        Tests = 1
+    },
+    [PSCustomObject]@{
+        ShortName = 'AppDataControllerTests'
+        ClassName = 'com.example.demo.controller.AppDataControllerTests'
+        Tests = 3
+    },
+    [PSCustomObject]@{
+        ShortName = 'AuthControllerTests'
+        ClassName = 'com.example.demo.controller.AuthControllerTests'
+        Tests = 7
+    },
+    [PSCustomObject]@{
+        ShortName = 'BusinessApiControllerTests'
+        ClassName = 'com.example.demo.controller.BusinessApiControllerTests'
+        Tests = 8
+    },
+    [PSCustomObject]@{
+        ShortName = 'SalesWriteIdempotencyHeaderTest'
+        ClassName = 'com.example.demo.controller.SalesWriteIdempotencyHeaderTest'
+        Tests = 1
+    },
+    [PSCustomObject]@{
+        ShortName = 'UserControllerTests'
+        ClassName = 'com.example.demo.controller.UserControllerTests'
+        Tests = 6
+    },
+    [PSCustomObject]@{
+        ShortName = 'AftersaleRefundRequestValidationTest'
+        ClassName = 'com.example.demo.dto.AftersaleRefundRequestValidationTest'
+        Tests = 3
+    },
+    [PSCustomObject]@{
+        ShortName = 'AftersaleServiceContractTest'
+        ClassName = 'com.example.demo.service.AftersaleServiceContractTest'
+        Tests = 5
+    },
+    [PSCustomObject]@{
+        ShortName = 'CustomerAddressServiceContractTest'
+        ClassName = 'com.example.demo.service.CustomerAddressServiceContractTest'
+        Tests = 4
+    },
+    [PSCustomObject]@{
+        ShortName = 'RefundServiceContractTest'
+        ClassName = 'com.example.demo.service.RefundServiceContractTest'
+        Tests = 7
+    }
+)
+$script:ExpectedProjectTotalTests = 45
 $script:ExpectedMainFiles = 21
 $script:ExpectedTestFiles = 8
 $script:ExpectedCompatibilityHash =
@@ -759,7 +822,16 @@ function Read-SafeXml {
 function Assert-SurefireReports {
     param(
         [Parameter(Mandatory = $true)]
-        [System.DateTime]$TestStartedUtc
+        [System.DateTime]$TestStartedUtc,
+
+        [Parameter(Mandatory = $true)]
+        [System.Object[]]$ExpectedTests,
+
+        [Parameter(Mandatory = $true)]
+        [int]$ExpectedTotalTests,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PhaseName
     )
 
     $reportDirectory = Join-Path `
@@ -773,7 +845,7 @@ function Assert-SurefireReports {
         -LiteralPath $reportDirectory `
         -Filter 'TEST-*.xml' `
         -File)
-    $expectedReportNames = @($script:ExpectedTests |
+    $expectedReportNames = @($ExpectedTests |
         ForEach-Object { "TEST-$($_.ClassName).xml" } |
         Sort-Object)
     $actualReportNames = @($actualReports.Name | Sort-Object)
@@ -781,11 +853,11 @@ function Assert-SurefireReports {
         -ReferenceObject $expectedReportNames `
         -DifferenceObject $actualReportNames)
     if ($difference.Count -gt 0) {
-        throw "Surefire report set is not exactly the expected 8 files:`n$($difference | Out-String)"
+        throw "$PhaseName report set is not exactly the expected $($ExpectedTests.Count) files:`n$($difference | Out-String)"
     }
 
     $total = 0
-    foreach ($expected in $script:ExpectedTests) {
+    foreach ($expected in $ExpectedTests) {
         $reportName = "TEST-$($expected.ClassName).xml"
         $reportPath = Join-Path $reportDirectory $reportName
         $reportItem = Get-Item -LiteralPath $reportPath
@@ -839,10 +911,33 @@ function Assert-SurefireReports {
             $expected.ShortName,
             $tests)
     }
-    if ($total -ne $script:ExpectedTotalTests) {
-        throw "Expected $($script:ExpectedTotalTests) total tests, found $total."
+    if ($total -ne $ExpectedTotalTests) {
+        throw "$PhaseName expected $ExpectedTotalTests total tests, found $total."
     }
-    Write-Host "Classification verification passed: $total/$total."
+    Write-Host "$PhaseName passed: $total/$total."
+}
+
+function Get-TestSelector {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Object[]]$ExpectedTests,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PhaseName
+    )
+
+    $names = @($ExpectedTests |
+        ForEach-Object { [string]$_.ShortName })
+    if ($names.Count -ne $ExpectedTests.Count -or
+        @($names | Sort-Object -Unique).Count -ne $names.Count) {
+        throw "$PhaseName contains missing or duplicate test names."
+    }
+    foreach ($name in $names) {
+        if ($name -notmatch '^[A-Za-z][A-Za-z0-9_]*$') {
+            throw "$PhaseName contains an invalid Maven test selector: $name"
+        }
+    }
+    return ($names -join ',')
 }
 
 Assert-PostgresTarget
@@ -850,24 +945,56 @@ Assert-RedisTarget
 Assert-Overlay
 Assert-Toolchain
 
-$testNames = @($script:ExpectedTests |
-    ForEach-Object { $_.ShortName })
-$testSelector = $testNames -join ','
+$classificationSelector = Get-TestSelector `
+    -ExpectedTests $script:ExpectedClassificationTests `
+    -PhaseName 'Classification verification'
+$resetSelector = Get-TestSelector `
+    -ExpectedTests $script:ExpectedResetTests `
+    -PhaseName 'Project database reset'
+$projectSelector = Get-TestSelector `
+    -ExpectedTests $script:ExpectedProjectTests `
+    -PhaseName 'Project regression'
 $compileArguments = @(
     'clean',
     'test',
     '-DskipTests'
 )
-$testArguments = @(
-    "-Dtest=$testSelector",
-    '-Dsales.postgres.integration=true',
-    '-Dsales.postgres.allow-destructive-target=true',
-    "-Dsales.postgres.target-url=$($script:PostgresUrl)",
-    "-Dsales.postgres.user=$PostgresUser",
+$connectionArguments = @(
     "-Dspring.datasource.url=$($script:PostgresUrl)",
     "-Dspring.datasource.username=$PostgresUser",
     "-Dspring.data.redis.host=$RedisHost",
-    "-Dspring.data.redis.port=$RedisPort",
+    "-Dspring.data.redis.port=$RedisPort"
+)
+$destructiveArguments = @(
+    '-Dsales.postgres.integration=true',
+    '-Dsales.postgres.allow-destructive-target=true',
+    "-Dsales.postgres.target-url=$($script:PostgresUrl)",
+    "-Dsales.postgres.user=$PostgresUser"
+)
+$classificationArguments = @(
+    "-Dtest=$classificationSelector"
+) + $destructiveArguments + $connectionArguments + @(
+    'test'
+)
+$resetArguments = @(
+    'clean',
+    "-Dtest=$resetSelector"
+) + $destructiveArguments + $connectionArguments + @(
+    'test'
+)
+$projectArguments = @(
+    'clean',
+    "-Dtest=$projectSelector"
+) + $connectionArguments + @(
+    '-Dspring.sql.init.mode=never',
+    '-Dspring.rabbitmq.listener.simple.auto-startup=false',
+    '-Dapp.dashboard.screen-refresh-millis=600000',
+    '-Dapp.outbox.publish-delay-millis=600000',
+    '-Dapp.order.expire-scan-delay-millis=600000',
+    '-Dapp.stock-reservation.expire-scan-delay-millis=600000',
+    '-Djunit.jupiter.execution.parallel.enabled=false',
+    '-DforkCount=1',
+    '-DreuseForks=true',
     'test'
 )
 
@@ -878,12 +1005,23 @@ Write-Host "PostgreSQL target: $($script:PostgresUrl)"
 Write-Host "Redis target: ${RedisHost}:${RedisPort}"
 Write-Host "Java home: $($script:JdkHomeResolved)"
 Write-Host "Maven: $($script:MavenCommandResolved)"
-Write-Host "Expected tests: $($script:ExpectedTotalTests) across $($script:ExpectedTests.Count) classes"
+Write-Host ("Expected classification tests: {0} across {1} classes" -f
+    $script:ExpectedClassificationTotalTests,
+    $script:ExpectedClassificationTests.Count)
+if ($IncludeProjectRegression) {
+    Write-Host ("Expected project regression tests: {0} across {1} classes" -f
+        $script:ExpectedProjectTotalTests,
+        $script:ExpectedProjectTests.Count)
+}
 
 if ($DryRun) {
     Write-Host 'DRY RUN: no TCP connection or Maven command was executed.'
     Write-Host "Compile command: mvn $($compileArguments -join ' ')"
-    Write-Host "Test command: mvn $($testArguments -join ' ')"
+    Write-Host "Classification command: mvn $($classificationArguments -join ' ')"
+    if ($IncludeProjectRegression) {
+        Write-Host "Database reset command: mvn $($resetArguments -join ' ')"
+        Write-Host "Project regression command: mvn $($projectArguments -join ' ')"
+    }
     exit 0
 }
 
@@ -919,13 +1057,23 @@ try {
         $redisPlain.Contains("`n")) {
         throw 'Passwords cannot contain NUL, CR, or LF.'
     }
-    $effectiveTestArguments = @($testArguments)
+    $effectiveClassificationArguments = @($classificationArguments)
+    $effectiveResetArguments = @($resetArguments)
+    $effectiveProjectArguments = @($projectArguments)
     if ([string]::IsNullOrEmpty($postgresPlain)) {
-        $effectiveTestArguments +=
+        $effectiveClassificationArguments +=
+            '-Dspring.datasource.password='
+        $effectiveResetArguments +=
+            '-Dspring.datasource.password='
+        $effectiveProjectArguments +=
             '-Dspring.datasource.password='
     }
     if ([string]::IsNullOrEmpty($redisPlain)) {
-        $effectiveTestArguments +=
+        $effectiveClassificationArguments +=
+            '-Dspring.data.redis.password='
+        $effectiveResetArguments +=
+            '-Dspring.data.redis.password='
+        $effectiveProjectArguments +=
             '-Dspring.data.redis.password='
     }
 
@@ -967,9 +1115,34 @@ try {
     $testStartedUtc = [System.DateTime]::UtcNow
     Invoke-Maven `
         -Description 'Fixed 8-class Sales verification' `
-        -Arguments $effectiveTestArguments
+        -Arguments $effectiveClassificationArguments
     Assert-SurefireReports `
-        -TestStartedUtc $testStartedUtc
+        -TestStartedUtc $testStartedUtc `
+        -ExpectedTests $script:ExpectedClassificationTests `
+        -ExpectedTotalTests $script:ExpectedClassificationTotalTests `
+        -PhaseName 'Classification verification'
+
+    if ($IncludeProjectRegression) {
+        $resetStartedUtc = [System.DateTime]::UtcNow
+        Invoke-Maven `
+            -Description 'Clean project database reset' `
+            -Arguments $effectiveResetArguments
+        Assert-SurefireReports `
+            -TestStartedUtc $resetStartedUtc `
+            -ExpectedTests $script:ExpectedResetTests `
+            -ExpectedTotalTests $script:ExpectedResetTotalTests `
+            -PhaseName 'Project database reset'
+
+        $projectStartedUtc = [System.DateTime]::UtcNow
+        Invoke-Maven `
+            -Description 'Fixed 10-class project regression' `
+            -Arguments $effectiveProjectArguments
+        Assert-SurefireReports `
+            -TestStartedUtc $projectStartedUtc `
+            -ExpectedTests $script:ExpectedProjectTests `
+            -ExpectedTotalTests $script:ExpectedProjectTotalTests `
+            -PhaseName 'Project regression'
+    }
 } finally {
     foreach ($name in $environmentNames) {
         [System.Environment]::SetEnvironmentVariable(
