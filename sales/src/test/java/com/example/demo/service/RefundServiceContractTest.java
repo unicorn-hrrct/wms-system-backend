@@ -251,6 +251,39 @@ class RefundServiceContractTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void cancelPendingRefundUsesCustomerScopedConditionalUpdate() {
+        when(customerIdProvider.requireCurrentCustomerIdForUpdate())
+            .thenReturn(CUSTOMER_ID);
+        when(jdbcTemplate.update(
+            contains("WHERE id=? AND status=0 AND customer_id=?"),
+            any(LocalDateTime.class),
+            eq(REFUND_ID),
+            eq(CUSTOMER_ID)))
+            .thenReturn(1);
+
+        service.cancel(REFUND_ID, IDEMPOTENCY_KEY);
+
+        verify(jdbcTemplate).update(
+            contains("WHERE id=? AND status=0 AND customer_id=?"),
+            any(LocalDateTime.class),
+            eq(REFUND_ID),
+            eq(CUSTOMER_ID));
+        verify(jdbcTemplate, never()).query(
+            contains("SELECT customer_id FROM ref_refund"),
+            any(RowMapper.class),
+            eq(REFUND_ID));
+        verify(idempotencyService).execute(
+            eq("refund:cancel"),
+            eq(CUSTOMER_ID),
+            eq(IDEMPOTENCY_KEY),
+            any(),
+            any(),
+            any());
+        verifyNoInteractions(currentUser);
+    }
+
+    @Test
     void cancelReportsMissingRefund() {
         when(customerIdProvider.requireCurrentCustomerIdForUpdate())
             .thenReturn(CUSTOMER_ID);
