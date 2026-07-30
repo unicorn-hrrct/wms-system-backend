@@ -1,7 +1,7 @@
 # 2026-07-30 Customer / Address / Aftersale / Refund 基线复验
 
 > 负责人：陈恩生（24443102401）
-> 验证完成时间：2026-07-30 08:45（Asia/Shanghai）
+> 验证完成时间：2026-07-30 09:06（Asia/Shanghai）
 > 团队分类基线：`upstream/sales@c9ccce2`
 > 正式契约：`backend/购物仓储管理系统API接口文档.md` v1.2
 > 记录性质：当前 v1.2 分类覆盖包的可复现验证证据
@@ -39,6 +39,15 @@
 `mvn -version`、`postgres --version` 独立复核，5672 监听状态于 09:00 用本机 TCP
 监听查询复核。
 
+先执行 JDK 21 干净编译：
+
+```text
+mvn clean test -DskipTests
+```
+
+Maven 重新编译 171 个主源码文件和 14 个测试源码文件，结果为 `BUILD SUCCESS`。编译
+日志包含既有的 deprecated/unchecked 提示，没有编译错误；该步骤跳过了测试执行。
+
 分类测试使用以下 8 个测试类。命令中的 PostgreSQL 必须是允许清空的临时目标，密码
 只通过本机参数提供，不写入仓库：
 
@@ -63,7 +72,7 @@ mvn \
 
 ## 3. 结果
 
-Surefire 于 2026-07-30 08:45 生成 8 份 XML 报告：
+干净编译后，Surefire 于 2026-07-30 09:06 重新生成 8 份 XML 报告：
 
 | 测试类 | tests | failures | errors | skipped |
 |---|---:|---:|---:|---:|
@@ -84,6 +93,10 @@ Surefire 于 2026-07-30 08:45 生成 8 份 XML 报告：
 - V001 可在新建 PostgreSQL 目标上重复执行；
 - 并发首次请求、失败回滚重试、过期 key、新旧载荷冲突及 CUSTOMER/USER 主体隔离
   5 项真实 PostgreSQL 幂等事务测试均通过。
+
+Spring 测试上下文启动时尝试连接 `localhost:5672`，日志明确记录
+`Connection refused`。该连接失败没有使上述 28 项测试失败，但也说明本次结果不能
+用于证明 RabbitMQ 可用。
 
 ## 4. 结论边界
 
