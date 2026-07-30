@@ -2,7 +2,7 @@
 
 > 负责人：陈恩生（24443102401）
 > 负责范围：Customer、Address、Refund；Aftersale 仅承接 Refund 前置协作边界
-> 团队基线：`upstream/sales` 的 `5dc682e`
+> 团队基线：`upstream/sales` 的 `c9ccce2`
 > 正式契约：`backend/购物仓储管理系统API接口文档.md` v1.2
 
 ## 1. 目录用途
@@ -39,6 +39,7 @@
 sales/
 ├── README.md
 ├── AFTERSALE-RULES-READINESS.md
+├── VERIFICATION-20260730.md
 ├── INTEGRATION.md
 ├── MANIFEST.md
 ├── sql/
@@ -64,9 +65,9 @@ git diff --name-only upstream/sales...HEAD
 
 ## 6. 当前状态
 
-截至 2026-07-29，Customer、Address、Aftersale/Refund 分类源码、增量 SQL 和测试均
+截至 2026-07-30，Customer、Address、Aftersale/Refund 分类源码、增量 SQL 和测试均
 已放入本目录。验证结果和集成限制记录在 `INTEGRATION.md`，文件级交付状态记录在
-`MANIFEST.md`。
+`MANIFEST.md`；2026-07-30 的独立基线复验记录见 `VERIFICATION-20260730.md`。
 
 “已交付”表示分类覆盖包已实现并在临时覆盖环境验证，不表示已经写入团队
 `backend/`，也不表示 RabbitMQ/IVP 消费端已联调完成。是否合入统一后端由组长在
