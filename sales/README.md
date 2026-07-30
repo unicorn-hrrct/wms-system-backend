@@ -1,7 +1,7 @@
 # Sales 分类交付
 
 > 负责人：陈恩生（24443102401）
-> 负责范围：Customer、Address、Refund
+> 负责范围：Customer、Address、Refund；Aftersale 仅承接 Refund 前置协作边界
 > 团队基线：`upstream/sales` 的 `5dc682e`
 > 正式契约：`backend/购物仓储管理系统API接口文档.md` v1.2
 
@@ -38,6 +38,7 @@
 ```text
 sales/
 ├── README.md
+├── AFTERSALE-RULES-READINESS.md
 ├── INTEGRATION.md
 ├── MANIFEST.md
 ├── sql/
@@ -70,3 +71,7 @@ git diff --name-only upstream/sales...HEAD
 “已交付”表示分类覆盖包已实现并在临时覆盖环境验证，不表示已经写入团队
 `backend/`，也不表示 RabbitMQ/IVP 消费端已联调完成。是否合入统一后端由组长在
 代码 PR 中审查决定。
+
+组长 2026-07-29 确认但尚待正式文档同步的换货完成、两周窗口、优惠订单退款上限和
+禁止库存回补规则，其当前证据、阻塞点、文件级改造范围和验收矩阵见
+`AFTERSALE-RULES-READINESS.md`。该文件是实施准备，不表示四项规则已经落地。
