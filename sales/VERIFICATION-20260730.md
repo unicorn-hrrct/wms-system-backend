@@ -1,7 +1,7 @@
 # 2026-07-30 Customer / Address / Aftersale / Refund 基线复验
 
 > 负责人：陈恩生（24443102401）
-> 验证完成时间：2026-07-30 16:22（Asia/Shanghai）
+> 验证完成时间：2026-07-30 16:37（Asia/Shanghai）
 > 团队分类基线：`upstream/sales@c9ccce2`
 > 正式契约：`backend/购物仓储管理系统API接口文档.md` v1.2
 > 记录性质：当前 v1.2 分类覆盖包的可复现验证证据
@@ -15,7 +15,7 @@
 
 - 团队后端基底为 `5dc682e`；
 - 将当前分类包的 29 个 `src/main`、`src/test` 文件按相对路径覆盖到隔离副本；
-- 隔离副本中的 29 个文件与当前分支 `5866a7c` 的分类源码经换行标准化后逐文件一致；
+- 隔离副本中的 29 个文件与当前分支 `9ab2ad0` 的分类源码经换行标准化后逐文件一致；
 - 测试读取的 `sales/sql/V001__customer_address_refund.sql` 也与当前分类包一致；
 - 隔离副本只用于验证，没有把其 `backend/` 差异提交或推送。
 
@@ -44,7 +44,7 @@
 1. 执行 `mvn clean test -DskipTests`；
 2. 执行固定 8 类，并安全解析且精确核对 8 份新生成的 Surefire XML；
 3. `clean` 后执行固定迁移测试，恢复专用库并精确核对 1/1；
-4. 再次 `clean`，执行固定 10 类项目回归并精确核对 49/49。
+4. 再次 `clean`，执行固定 10 类项目回归并精确核对 52/52。
 
 密码以 `SecureString` 传入，只通过子进程环境使用，Maven 输出会脱敏并在结束后恢复
 原环境。本次干净编译重新编译 171 个主源码文件和 13 个测试源码文件，结果为
@@ -66,7 +66,8 @@
 
 修复 Windows PowerShell XML 类型适配导致的根标签误判，并补齐
 `pom.xml/schema.sql/data.sql` 重解析链检查后，基础门禁于 10:37 从头运行成功。
-下午补充 3 项地址边界和 1 项退款取消成功测试后，最终门禁于 16:21 从干净编译开始完整运行；分类阶段
+下午补充 3 项地址边界、1 项退款取消成功和 3 项退款审核边界测试后，最终门禁于
+16:36 从干净编译开始完整运行；分类阶段
 重新生成并由脚本逐份校验以下 8 份 XML：
 
 | 测试类 | tests | failures | errors | skipped |
@@ -77,9 +78,9 @@
 | `SalesOverlayMigrationTest` | 1 | 0 | 0 | 0 |
 | `AftersaleServiceContractTest` | 5 | 0 | 0 | 0 |
 | `CustomerAddressServiceContractTest` | 7 | 0 | 0 | 0 |
-| `RefundServiceContractTest` | 8 | 0 | 0 | 0 |
+| `RefundServiceContractTest` | 11 | 0 | 0 | 0 |
 | `SalesIdempotencyPostgresIntegrationTest` | 5 | 0 | 0 | 0 |
-| **合计** | **32** | **0** | **0** | **0** |
+| **合计** | **35** | **0** | **0** | **0** |
 
 本次复验证明：
 
@@ -87,6 +88,7 @@
 - 地址写操作越权、最后一条地址删除保护，以及订单已引用地址仅修改收货人字段通过；
 - Aftersale/Refund 的申请、审核、完成、取消、额度和 Outbox 边界仍通过；本人取消
   PENDING 退款的成功路径同时验证了 `id + status + customer_id` 条件更新；
+- 退款驳回备注、PENDING 审核状态和批准金额上限三项 v1.2 约束通过；
 - V001 可在新建 PostgreSQL 目标上重复执行；
 - 并发首次请求、失败回滚重试、过期 key、新旧载荷冲突及 CUSTOMER/USER 主体隔离
   5 项真实 PostgreSQL 幂等事务测试均通过。
@@ -98,8 +100,8 @@
 
 ### 3.2 项目级非重建型回归
 
-增强脚本在分类阶段通过后自动 `clean`，于 16:22 用迁移测试恢复专用库并核对
-1/1；随后再次 `clean` 并运行以下固定 10 类，16:22 生成 10 份 XML：
+增强脚本在分类阶段通过后自动 `clean`，于 16:37 用迁移测试恢复专用库并核对
+1/1；随后再次 `clean` 并运行以下固定 10 类，16:37 生成 10 份 XML：
 
 | 测试类 | tests | failures | errors | skipped |
 |---|---:|---:|---:|---:|
@@ -112,17 +114,17 @@
 | `AftersaleRefundRequestValidationTest` | 3 | 0 | 0 | 0 |
 | `AftersaleServiceContractTest` | 5 | 0 | 0 | 0 |
 | `CustomerAddressServiceContractTest` | 7 | 0 | 0 | 0 |
-| `RefundServiceContractTest` | 8 | 0 | 0 | 0 |
-| **合计** | **49** | **0** | **0** | **0** |
+| `RefundServiceContractTest` | 11 | 0 | 0 | 0 |
+| **合计** | **52** | **0** | **0** | **0** |
 
 首次整理选择器时把 `AppDataControllerTests` 误写成不存在的 `AppDataTests`，Maven
 只运行了 42 项；补正后若直接复用已被前一轮修改的数据库，会出现库存基数和商家申请
 状态两项污染失败。该结果未被计为代码回归。执行迁移测试恢复干净数据后，最终一次
-正确选择器为上表 49/49。
+正确选择器为上表 52/52。
 
 脚本对 10 份报告的精确文件集、suite 名、测试数、失败、错误、跳过、testcase 节点和
 报告文件生成时间均验收通过。脚本退出后又使用独立只读命令解析同一批 XML，结果仍为
-10 份、49 tests / 0 failures / 0 errors / 0 skipped，且类名集合与固定清单一致。
+10 份、52 tests / 0 failures / 0 errors / 0 skipped，且类名集合与固定清单一致。
 
 Spring 测试上下文启动时尝试连接 `localhost:5672`，日志明确记录
 `Connection refused`。该连接失败没有使最终两阶段测试失败，但也说明本次结果不能
@@ -130,8 +132,8 @@ Spring 测试上下文启动时尝试连接 `localhost:5672`，日志明确记�
 
 ## 4. 结论边界
 
-- 分类 32 项与非重建型 49 项有 24 项重叠；两阶段合计覆盖当前 13 个测试类中的
-  57 个不同测试方法，但不是一次无序执行的“57 项全量命令”。
+- 分类 35 项与非重建型 52 项有 27 项重叠；两阶段合计覆盖当前 13 个测试类中的
+  60 个不同测试方法，但不是一次无序执行的“60 项全量命令”。
 - 当前报告证明 Outbox 事务落库边界，不证明 RabbitMQ 实际发布、重试、死信或 IVP
   消费与库存结果。
 - 本次没有验证换货完成接口、确认收货起两周、优惠订单 50% 退款上限及
