@@ -69,7 +69,7 @@ $script:ExpectedClassificationTests = @(
     [PSCustomObject]@{
         ShortName = 'RefundServiceContractTest'
         ClassName = 'com.example.demo.service.RefundServiceContractTest'
-        Tests = 8
+        Tests = 11
     },
     [PSCustomObject]@{
         ShortName = 'CustomerAddressAftersaleRefundHttpIntegrationTest'
@@ -82,7 +82,7 @@ $script:ExpectedClassificationTests = @(
         Tests = 5
     }
 )
-$script:ExpectedClassificationTotalTests = 32
+$script:ExpectedClassificationTotalTests = 35
 $script:ExpectedResetTests = @(
     [PSCustomObject]@{
         ShortName = 'SalesOverlayMigrationTest'
@@ -140,10 +140,10 @@ $script:ExpectedProjectTests = @(
     [PSCustomObject]@{
         ShortName = 'RefundServiceContractTest'
         ClassName = 'com.example.demo.service.RefundServiceContractTest'
-        Tests = 8
+        Tests = 11
     }
 )
-$script:ExpectedProjectTotalTests = 49
+$script:ExpectedProjectTotalTests = 52
 $script:ExpectedMainFiles = 21
 $script:ExpectedTestFiles = 8
 $script:ExpectedCompatibilityHash =

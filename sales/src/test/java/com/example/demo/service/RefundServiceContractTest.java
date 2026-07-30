@@ -158,6 +158,64 @@ class RefundServiceContractTest {
     }
 
     @Test
+    void auditRejectsMissingRemarkBeforeRefundLookup() {
+        when(currentUser.requireUserId()).thenReturn(USER_ID);
+
+        BusinessException error = assertThrows(
+            BusinessException.class,
+            () -> service.audit(
+                REFUND_ID,
+                new RefundAuditRequest(2, null, null, " "),
+                IDEMPOTENCY_KEY));
+
+        assertEquals(ApiErrorCode.BAD_REQUEST, error.getErrorCode());
+        verifyNoInteractions(
+            jdbcTemplate, customerIdProvider, outboxEventService);
+    }
+
+    @Test
+    void auditRejectsNonPendingRefund() throws Exception {
+        when(currentUser.requireUserId()).thenReturn(USER_ID);
+        stubRefundState(1, 1, null, 0);
+
+        BusinessException error = assertThrows(
+            BusinessException.class,
+            () -> service.audit(
+                REFUND_ID,
+                new RefundAuditRequest(
+                    1, new BigDecimal("100.00"), null, null),
+                IDEMPOTENCY_KEY));
+
+        assertEquals(
+            ApiErrorCode.ORDER_STATE_INVALID,
+            error.getErrorCode());
+        verify(jdbcTemplate, never()).update(
+            anyString(), any(Object[].class));
+        verifyNoInteractions(outboxEventService);
+    }
+
+    @Test
+    void auditRejectsApprovedAmountAboveAppliedAmount() throws Exception {
+        when(currentUser.requireUserId()).thenReturn(USER_ID);
+        stubRefundState(1, 0, null, 0);
+
+        BusinessException error = assertThrows(
+            BusinessException.class,
+            () -> service.audit(
+                REFUND_ID,
+                new RefundAuditRequest(
+                    1, new BigDecimal("100.01"), null, null),
+                IDEMPOTENCY_KEY));
+
+        assertEquals(
+            ApiErrorCode.REFUND_AMOUNT_EXCEEDED,
+            error.getErrorCode());
+        verify(jdbcTemplate, never()).update(
+            anyString(), any(Object[].class));
+        verifyNoInteractions(outboxEventService);
+    }
+
+    @Test
     void completePublishesFullRestockEventOnlyThroughOutbox()
         throws Exception {
         when(currentUser.requireUserId()).thenReturn(USER_ID);
