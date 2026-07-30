@@ -1,7 +1,7 @@
 # 2026-07-30 Customer / Address / Aftersale / Refund 基线复验
 
 > 负责人：陈恩生（24443102401）
-> 验证完成时间：2026-07-30 09:06（Asia/Shanghai）
+> 验证完成时间：2026-07-30 10:45（Asia/Shanghai）
 > 团队分类基线：`upstream/sales@c9ccce2`
 > 正式契约：`backend/购物仓储管理系统API接口文档.md` v1.2
 > 记录性质：当前 v1.2 分类覆盖包的可复现验证证据
@@ -15,7 +15,7 @@
 
 - 团队后端基底为 `5dc682e`；
 - 将当前分类包的 29 个 `src/main`、`src/test` 文件按相对路径覆盖到隔离副本；
-- 隔离副本中的 29 个文件与 `upstream/sales@c9ccce2` 经换行标准化后逐文件一致；
+- 隔离副本中的 29 个文件与当前分支 `accdba4` 的分类源码经换行标准化后逐文件一致；
 - 测试读取的 `sales/sql/V001__customer_address_refund.sql` 也与当前分类包一致；
 - 隔离副本只用于验证，没有把其 `backend/` 差异提交或推送。
 
@@ -30,49 +30,41 @@
 - Java 21.0.11；Surefire 报告记录
   `java.home=D:\Java\jdk-21.0.11+10`；
 - Apache Maven 3.9.16；
-- PostgreSQL 18.4，一次性新建的本地测试集群
-  `jdbc:postgresql://127.0.0.1:55432/postgres`；
+- PostgreSQL 18.4，本地专用可丢弃数据库
+  `jdbc:postgresql://127.0.0.1:55432/sales_verify_20260730`；
 - Redis 兼容实例 `127.0.0.1:56379`；
 - `127.0.0.1:5672` 没有 RabbitMQ 监听进程。
 
-其中 Java 版本和连接参数来自本次 Surefire XML；Maven 与 PostgreSQL 版本由
-`mvn -version`、`postgres --version` 独立复核，5672 监听状态于 09:00 用本机 TCP
-监听查询复核。
+分类验证通过 `sales/scripts/Invoke-SalesClassificationVerification.ps1` 执行。脚本
+先核对独立工作树、固定 Git HEAD、21 个主源码、8 个测试源码、V001 和已审查的编译
+兼容文件，再检查 Java/Maven、回环地址、非默认端口、专用库名和逐字破坏性确认。先
+运行 `-DryRun`；干跑不会连接端口或执行 Maven，正式运行才会：
 
-先执行 JDK 21 干净编译：
+1. 执行 `mvn clean test -DskipTests`；
+2. 执行固定 8 类；
+3. 安全解析且精确核对 8 份新生成的 Surefire XML。
 
-```text
-mvn clean test -DskipTests
-```
+密码以 `SecureString` 传入，只通过子进程环境使用，Maven 输出会脱敏并在结束后恢复
+原环境。本次干净编译重新编译 171 个主源码文件和 13 个测试源码文件，结果为
+`BUILD SUCCESS`；既有 deprecated/unchecked 提示不属于编译错误。
 
-Maven 重新编译 171 个主源码文件和 14 个测试源码文件，结果为 `BUILD SUCCESS`。编译
-日志包含既有的 deprecated/unchecked 提示，没有编译错误；该步骤跳过了测试执行。
+项目级非重建型回归在重新执行 `SalesOverlayMigrationTest` 恢复
+`schema.sql + data.sql + V001` 后运行。为避免测试类无序重建同一数据库，明确排除
+`CustomerAddressAftersaleRefundHttpIntegrationTest`、
+`SalesOverlayMigrationTest` 和 `SalesIdempotencyPostgresIntegrationTest`，并设置
+`spring.sql.init.mode=never`；这三类重建/清理数据库的测试已包含在前一阶段的分类
+验证中。其余接口测试仍会在专用库写入测试数据，“非重建型”不表示只读。
 
-分类测试使用以下 8 个测试类。命令中的 PostgreSQL 必须是允许清空的临时目标，密码
-只通过本机参数提供，不写入仓库：
-
-```text
-mvn \
-  -Dtest=SalesWriteIdempotencyHeaderTest,AftersaleRefundRequestValidationTest,SalesOverlayMigrationTest,AftersaleServiceContractTest,CustomerAddressServiceContractTest,RefundServiceContractTest,CustomerAddressAftersaleRefundHttpIntegrationTest,SalesIdempotencyPostgresIntegrationTest \
-  -Dsales.postgres.integration=true \
-  -Dsales.postgres.allow-destructive-target=true \
-  -Dsales.postgres.target-url=jdbc:postgresql://127.0.0.1:55432/postgres \
-  -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:55432/postgres \
-  -Dspring.datasource.username=postgres \
-  -Dspring.datasource.password= \
-  -Dspring.data.redis.host=127.0.0.1 \
-  -Dspring.data.redis.port=56379 \
-  -Dspring.data.redis.password=<本地测试密码> \
-  test
-```
-
-`SalesOverlayMigrationTest` 会重建目标库中的团队表，
-`SalesIdempotencyPostgresIntegrationTest` 也会执行 V001 并创建、删除探针表。不得
-把生产库、共享库或保存有项目数据的数据库放到上述目标参数。
+专用数据库会被迁移测试清空和重建；不得把生产库、共享库或保存有项目数据的数据库
+放入上述流程。
 
 ## 3. 结果
 
-干净编译后，Surefire 于 2026-07-30 09:06 重新生成 8 份 XML 报告：
+### 3.1 分类验证
+
+修复 Windows PowerShell XML 类型适配导致的根标签误判，并补齐
+`pom.xml/schema.sql/data.sql` 重解析链检查后，最终门禁于 10:37 从头运行成功。
+Surefire 重新生成且脚本逐份校验以下 8 份 XML：
 
 | 测试类 | tests | failures | errors | skipped |
 |---|---:|---:|---:|---:|
@@ -94,17 +86,44 @@ mvn \
 - 并发首次请求、失败回滚重试、过期 key、新旧载荷冲突及 CUSTOMER/USER 主体隔离
   5 项真实 PostgreSQL 幂等事务测试均通过。
 
+脚本定稿前出现过两类未采信结果：Redis 认证参数不匹配导致 Spring 上下文错误；以及
+测试已为 28/28、但 XML 根标签读取错误使脚本非零退出。两者修复后均从头复跑，上表
+只记录最终脚本退出码为 0 的结果。独立扫描 8 份 XML 未发现实际数据库或 Redis 密码。
+
+### 3.2 项目级非重建型回归
+
+10:44 先用迁移测试恢复专用库，结果 1/1。随后 Java 21 干净构建并运行以下 10 类，
+10:45 生成 10 份 XML：
+
+| 测试类 | tests | failures | errors | skipped |
+|---|---:|---:|---:|---:|
+| `AppDataControllerTests` | 3 | 0 | 0 | 0 |
+| `AuthControllerTests` | 7 | 0 | 0 | 0 |
+| `BusinessApiControllerTests` | 8 | 0 | 0 | 0 |
+| `SalesWriteIdempotencyHeaderTest` | 1 | 0 | 0 | 0 |
+| `UserControllerTests` | 6 | 0 | 0 | 0 |
+| `DemoApplicationTests` | 1 | 0 | 0 | 0 |
+| `AftersaleRefundRequestValidationTest` | 3 | 0 | 0 | 0 |
+| `AftersaleServiceContractTest` | 5 | 0 | 0 | 0 |
+| `CustomerAddressServiceContractTest` | 4 | 0 | 0 | 0 |
+| `RefundServiceContractTest` | 7 | 0 | 0 | 0 |
+| **合计** | **45** | **0** | **0** | **0** |
+
+首次整理选择器时把 `AppDataControllerTests` 误写成不存在的 `AppDataTests`，Maven
+只运行了 42 项；补正后若直接复用已被前一轮修改的数据库，会出现库存基数和商家申请
+状态两项污染失败。该结果未被计为代码回归。执行迁移测试恢复干净数据后，最终一次
+正确选择器为上表 45/45。
+
 Spring 测试上下文启动时尝试连接 `localhost:5672`，日志明确记录
-`Connection refused`。该连接失败没有使上述 28 项测试失败，但也说明本次结果不能
+`Connection refused`。该连接失败没有使最终两阶段测试失败，但也说明本次结果不能
 用于证明 RabbitMQ 可用。
 
 ## 4. 结论边界
 
-- `28/28` 只覆盖上表 8 个分类测试类，不能写成全项目所有测试通过。
+- 分类 28 项与非重建型 45 项有 20 项重叠；两阶段合计覆盖当前 13 个测试类中的
+  53 个不同测试方法，但不是一次无序执行的“53 项全量命令”。
 - 当前报告证明 Outbox 事务落库边界，不证明 RabbitMQ 实际发布、重试、死信或 IVP
   消费与库存结果。
 - 本次没有验证换货完成接口、确认收货起两周、优惠订单 50% 退款上限及
   `restock` 只能为 `false`；这些仍按 `AFTERSALE-RULES-READINESS.md` 的开工门禁
   等待正式接口和 Schema 依赖同步。
-- 2026-07-29 的项目级非破坏性 `45/45` 是既有独立证据；本地没有保存足够信息还原
-  当时精确的 45 项类清单，因此本次没有凭猜测重复宣称该结果。
