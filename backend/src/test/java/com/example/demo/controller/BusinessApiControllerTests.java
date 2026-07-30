@@ -125,6 +125,7 @@ class BusinessApiControllerTests {
             .andExpect(jsonPath("$.data.status").value(0))
             .andReturn();
         long orderId = json(orderResult).path("data").path("orderId").asLong();
+        String orderNo = json(orderResult).path("data").path("orderNo").asText();
         BigDecimal orderPayAmount = json(orderResult).path("data").path("payAmount").decimalValue();
 
         mockMvc.perform(post("/api/v1/order/create")
@@ -170,6 +171,26 @@ class BusinessApiControllerTests {
             .andExpect(jsonPath("$.data.payStatus").value(1));
 
         String admin = bearerToken("admin", "admin123");
+        MvcResult merchantOrderList = mockMvc.perform(get("/api/v1/web/order")
+                .header(HttpHeaders.AUTHORIZATION, admin)
+                .param("status", "1")
+                .param("orderNo", orderNo))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.total").value(1))
+            .andExpect(jsonPath("$.data.list[0].orderId").value(orderId))
+            .andExpect(jsonPath("$.data.list[0].username").value("alice"))
+            .andExpect(jsonPath("$.data.list[0].firstProductName").value("iPhone 15 Pro"))
+            .andReturn();
+        org.junit.jupiter.api.Assertions.assertTrue(
+            containsLong(json(merchantOrderList).path("data").path("list"), "userId", 2));
+
+        mockMvc.perform(get("/api/v1/web/order/list")
+                .header(HttpHeaders.AUTHORIZATION, bearerToken("seller", "admin123"))
+                .param("customerKeyword", "alice")
+                .param("pageSize", "5"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.list[0].orderNo").value(orderNo));
+
         mockMvc.perform(post("/api/v1/order/{orderId}/ship", orderId)
                 .header(HttpHeaders.AUTHORIZATION, admin)
                 .contentType(MediaType.APPLICATION_JSON)

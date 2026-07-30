@@ -1756,6 +1756,64 @@ GET /order/my
 
 ---
 
+### 7.6.1 商家/销售员查看普通用户订单列表
+
+```
+GET /web/order
+GET /web/order/list
+```
+
+**权限：** `seller/admin`。两个路径功能相同，推荐使用 `/web/order`。
+
+**请求参数：**
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| status | Integer | 否 | 订单状态筛选：`0` 待支付、`1` 待发货、`2` 已发货、`3` 已完成、`4` 已取消、`5` 售后处理中 |
+| orderNo | String | 否 | 订单号模糊查询 |
+| username | String | 否 | 普通用户登录名模糊查询 |
+| customerKeyword | String | 否 | 客户登录名、昵称、手机号、收货人或收货电话模糊查询 |
+| startDate | String | 否 | 创建时间起点，ISO-8601 日期时间 |
+| endDate | String | 否 | 创建时间终点，ISO-8601 日期时间，不包含该时间点 |
+| pageNum | Integer | 否 | 页码，默认 `1` |
+| pageSize | Integer | 否 | 每页条数，默认 `10`，最大 `100` |
+
+**响应说明：** 返回 `total`、`pageNum`、`pageSize`、`pages` 和 `list` 分页结构。列表项包含订单号、普通用户及客户信息、金额、状态、部分售后标记、商品摘要、备注和订单关键时间。
+
+```json
+{
+  "code": 200,
+  "data": {
+    "total": 1,
+    "pageNum": 1,
+    "pageSize": 10,
+    "pages": 1,
+    "list": [
+      {
+        "orderId": 9001,
+        "orderNo": "SO202607240001",
+        "userId": 2,
+        "username": "alice",
+        "customerId": 3001,
+        "customerName": "Alice",
+        "customerPhone": "13800138000",
+        "totalAmount": 8999.00,
+        "payAmount": 8999.00,
+        "status": 1,
+        "statusText": "已支付/待发货",
+        "hasPartialAftersale": false,
+        "itemCount": 1,
+        "totalQuantity": 1,
+        "firstProductName": "iPhone 15 Pro",
+        "createTime": "2026-07-24T10:20:00"
+      }
+    ]
+  }
+}
+```
+
+---
+
 ### 7.7 取消订单
 
 ```

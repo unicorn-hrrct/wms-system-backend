@@ -279,6 +279,78 @@ public class SalesService {
         return page(total == null ? 0 : total, pageNum, pageSize, list);
     }
 
+    public Map<String, Object> merchantOrders(Integer status, String orderNo, String username,
+                                              String customerKeyword, LocalDateTime startDate,
+                                              LocalDateTime endDate, int pageNum, int pageSize) {
+        StringBuilder where = new StringBuilder(" WHERE 1=1");
+        List<Object> args = new ArrayList<>();
+        if (status != null) {
+            where.append(" AND o.status=?");
+            args.add(status);
+        }
+        if (StringUtils.hasText(orderNo)) {
+            where.append(" AND o.order_no ILIKE ?");
+            args.add("%" + orderNo.trim() + "%");
+        }
+        if (StringUtils.hasText(username)) {
+            where.append(" AND u.username ILIKE ?");
+            args.add("%" + username.trim() + "%");
+        }
+        if (StringUtils.hasText(customerKeyword)) {
+            where.append("""
+                 AND (u.username ILIKE ? OR u.nickname ILIKE ? OR u.phone ILIKE ?
+                      OR c.nickname ILIKE ? OR c.phone ILIKE ?
+                      OR o.address_snapshot->>'receiverName' ILIKE ?
+                      OR o.address_snapshot->>'receiverPhone' ILIKE ?)
+                """);
+            String value = "%" + customerKeyword.trim() + "%";
+            for (int i = 0; i < 7; i++) {
+                args.add(value);
+            }
+        }
+        if (startDate != null) {
+            where.append(" AND o.create_time >= ?");
+            args.add(startDate);
+        }
+        if (endDate != null) {
+            where.append(" AND o.create_time < ?");
+            args.add(endDate);
+        }
+        String from = """
+            FROM ord_order o
+            JOIN t_user u ON u.id=o.user_id
+            LEFT JOIN crm_customer c ON c.id=o.customer_id
+            """;
+        Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) " + from + where,
+            Long.class, args.toArray());
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(pageSize);
+        pageArgs.add((long) (pageNum - 1) * pageSize);
+        List<Map<String, Object>> list = jdbcTemplate.query("""
+            SELECT o.id, o.order_no, o.user_id, u.username, o.customer_id,
+                   COALESCE(c.nickname, u.nickname) customer_name,
+                   COALESCE(c.phone, u.phone) customer_phone,
+                   o.total_amount, o.discount_amount, o.freight, o.pay_amount,
+                   o.status, o.has_partial_aftersale, o.remark, o.cancel_reason,
+                   o.expire_time, o.pay_time, o.ship_time, o.receive_time,
+                   o.create_time, o.update_time,
+                   COALESCE(items.item_count, 0) item_count,
+                   COALESCE(items.total_quantity, 0) total_quantity,
+                   items.first_product_name, items.first_image
+            """ + from + """
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*)::int item_count,
+                       COALESCE(SUM(oi.quantity), 0)::int total_quantity,
+                       (ARRAY_AGG(oi.product_name ORDER BY oi.id))[1] first_product_name,
+                       (ARRAY_AGG(oi.main_image ORDER BY oi.id))[1] first_image
+                FROM ord_order_item oi
+                WHERE oi.order_id=o.id
+            ) items ON TRUE
+            """ + where + " ORDER BY o.create_time DESC, o.id DESC LIMIT ? OFFSET ?",
+            this::merchantOrderRow, pageArgs.toArray());
+        return page(total == null ? 0 : total, pageNum, pageSize, list);
+    }
+
     @Transactional
     public void cancel(Long orderId, String reason) {
         OrderHeader order = requireOwnedOrderForUpdate(orderId);
@@ -413,6 +485,7 @@ public class SalesService {
     private Map<String,Object> orderSummaryRow(ResultSet rs,int rowNum)throws SQLException{Map<String,Object> row=new LinkedHashMap<>();row.put("orderId",rs.getLong("id"));row.put("orderNo",rs.getString("order_no"));row.put("totalAmount",rs.getBigDecimal("total_amount"));row.put("payAmount",rs.getBigDecimal("pay_amount"));row.put("discountAmount",rs.getBigDecimal("discount_amount"));row.put("freight",rs.getBigDecimal("freight"));row.put("status",rs.getInt("status"));row.put("statusText",statusText(rs.getInt("status")));row.put("expireTime",rs.getTimestamp("expire_time").toLocalDateTime());row.put("createTime",rs.getTimestamp("create_time").toLocalDateTime());return row;}
     private Map<String,Object> orderDetailRow(ResultSet rs,int rowNum)throws SQLException{Map<String,Object> row=orderSummaryRow(rs,rowNum);row.put("payTime",rs.getTimestamp("pay_time")==null?null:rs.getTimestamp("pay_time").toLocalDateTime());try{row.put("address",objectMapper.readValue(rs.getString("address_snapshot"),new TypeReference<LinkedHashMap<String,Object>>(){}));}catch(Exception ex){row.put("address",Map.of());}return row;}
     private Map<String,Object> orderItemRow(ResultSet rs,int rowNum)throws SQLException{Map<String,Object> row=new LinkedHashMap<>();row.put("orderItemId",rs.getLong("id"));row.put("skuId",rs.getLong("sku_id"));row.put("skuCode",rs.getString("sku_code"));row.put("productName",rs.getString("product_name"));row.put("specValues",parseJsonMap(rs.getString("spec_values")));row.put("mainImage",rs.getString("main_image"));row.put("price",rs.getBigDecimal("price"));row.put("quantity",rs.getInt("quantity"));row.put("subtotal",rs.getBigDecimal("subtotal"));return row;}
+    private Map<String,Object> merchantOrderRow(ResultSet rs,int rowNum)throws SQLException{Map<String,Object> row=new LinkedHashMap<>();row.put("orderId",rs.getLong("id"));row.put("orderNo",rs.getString("order_no"));row.put("userId",rs.getLong("user_id"));row.put("username",rs.getString("username"));row.put("customerId",rs.getLong("customer_id"));row.put("customerName",rs.getString("customer_name"));row.put("customerPhone",rs.getString("customer_phone"));row.put("totalAmount",rs.getBigDecimal("total_amount"));row.put("payAmount",rs.getBigDecimal("pay_amount"));row.put("discountAmount",rs.getBigDecimal("discount_amount"));row.put("freight",rs.getBigDecimal("freight"));row.put("status",rs.getInt("status"));row.put("statusText",statusText(rs.getInt("status")));row.put("hasPartialAftersale",rs.getBoolean("has_partial_aftersale"));row.put("remark",rs.getString("remark"));row.put("cancelReason",rs.getString("cancel_reason"));row.put("itemCount",rs.getInt("item_count"));row.put("totalQuantity",rs.getInt("total_quantity"));row.put("firstProductName",rs.getString("first_product_name"));row.put("firstImage",rs.getString("first_image"));row.put("expireTime",rs.getTimestamp("expire_time").toLocalDateTime());row.put("payTime",rs.getTimestamp("pay_time")==null?null:rs.getTimestamp("pay_time").toLocalDateTime());row.put("shipTime",rs.getTimestamp("ship_time")==null?null:rs.getTimestamp("ship_time").toLocalDateTime());row.put("receiveTime",rs.getTimestamp("receive_time")==null?null:rs.getTimestamp("receive_time").toLocalDateTime());row.put("createTime",rs.getTimestamp("create_time").toLocalDateTime());row.put("updateTime",rs.getTimestamp("update_time").toLocalDateTime());return row;}
     private String statusText(int status){return switch(status){case 0->"待支付";case 1->"已支付/待发货";case 2->"已发货";case 3->"已完成";case 4->"已取消";case 5->"售后处理中";default->"未知";};}
     private Map<String,Object> page(long total,int pageNum,int pageSize,List<?> list){Map<String,Object> row=new LinkedHashMap<>();row.put("total",total);row.put("pageNum",pageNum);row.put("pageSize",pageSize);row.put("pages",(total+pageSize-1)/pageSize);row.put("list",list);return row;}
 
