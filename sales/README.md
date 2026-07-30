@@ -42,6 +42,8 @@ sales/
 ├── VERIFICATION-20260730.md
 ├── INTEGRATION.md
 ├── MANIFEST.md
+├── scripts/
+│   └── Test-SalesPrScope.ps1
 ├── sql/
 │   └── V001__customer_address_refund.sql
 └── src/
@@ -76,3 +78,21 @@ git diff --name-only upstream/sales...HEAD
 组长 2026-07-29 确认但尚待正式文档同步的换货完成、两周窗口、优惠订单退款上限和
 禁止库存回补规则，其当前证据、阻塞点、文件级改造范围和验收矩阵见
 `AFTERSALE-RULES-READINESS.md`。该文件是实施准备，不表示四项规则已经落地。
+
+## 7. PR 范围门禁
+
+分别重新拉取 `origin` 与 `upstream`、提交并推送当前代码分支后，执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File sales/scripts/Test-SalesPrScope.ps1
+```
+
+脚本只读检查以下条件，任一不满足即返回失败：
+
+- 工作树无已跟踪或未跟踪差异；
+- 当前分支跟踪 `origin/*`，且本地 HEAD 已完整推送；
+- 当前 HEAD 包含最新 `upstream/sales`，不存在落后提交；
+- 两点和三点 Git 差异路径集合一致，且全部严格位于根目录 `sales/`；
+- `git diff --check` 无空白错误。
+
+脚本不会执行 `fetch`、提交、推送或创建 PR；远端拉取仍须在运行门禁前显式完成。
