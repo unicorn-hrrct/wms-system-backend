@@ -24,10 +24,26 @@ class SalesOverlayMigrationTest {
         "jdbc:postgresql://127.0.0.1:55432/postgres");
     private static final String USER = System.getProperty(
         "sales.postgres.user", "postgres");
-    private static final String PASSWORD = System.getProperty(
-        "sales.postgres.password", "");
+    private static final String PASSWORD = setting(
+        "sales.postgres.password",
+        "SALES_POSTGRES_PASSWORD",
+        "");
     private static final String TARGET_URL = System.getProperty(
         "sales.postgres.target-url", "");
+
+    private static String setting(
+        String propertyName,
+        String environmentName,
+        String defaultValue) {
+        String propertyValue = System.getProperty(propertyName);
+        if (propertyValue != null) {
+            return propertyValue;
+        }
+        String environmentValue = System.getenv(environmentName);
+        return environmentValue == null
+            ? defaultValue
+            : environmentValue;
+    }
 
     @Test
     void migrationAppliesTwiceToFreshUpstreamSchema() throws Exception {
