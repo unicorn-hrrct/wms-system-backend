@@ -24,10 +24,26 @@ class SalesOverlayMigrationTest {
         "jdbc:postgresql://127.0.0.1:55432/postgres");
     private static final String USER = System.getProperty(
         "sales.postgres.user", "postgres");
-    private static final String PASSWORD = System.getProperty(
-        "sales.postgres.password", "");
+    private static final String PASSWORD = setting(
+        "sales.postgres.password",
+        "SALES_POSTGRES_PASSWORD",
+        "");
     private static final String TARGET_URL = System.getProperty(
         "sales.postgres.target-url", "");
+
+    private static String setting(
+        String propertyName,
+        String environmentName,
+        String defaultValue) {
+        String propertyValue = System.getProperty(propertyName);
+        if (propertyValue != null) {
+            return propertyValue;
+        }
+        String environmentValue = System.getenv(environmentName);
+        return environmentValue == null
+            ? defaultValue
+            : environmentValue;
+    }
 
     @Test
     void migrationAppliesTwiceToFreshUpstreamSchema() throws Exception {
@@ -72,6 +88,8 @@ class SalesOverlayMigrationTest {
         execute(
             connection,
             Path.of("src/main/resources/data.sql"));
+        executeSql(connection,
+            "DROP INDEX IF EXISTS uq_address_customer_default");
         Path migration = Path.of(
             "../sales/sql/V001__customer_address_refund.sql");
         execute(connection, migration);
@@ -97,6 +115,8 @@ class SalesOverlayMigrationTest {
             "ref_refund", "fk_refund_item_order");
         assertConstraint(connection,
             "ref_refund", "ck_refund_restock_type");
+        assertIndex(connection,
+            "crm_address", "uq_address_customer_default");
         assertTable(connection, "sales_idempotency_subject");
         assertTable(connection, "sales_idempotency_record");
     }
@@ -166,6 +186,29 @@ class SalesOverlayMigrationTest {
             try (ResultSet result = statement.executeQuery()) {
                 assertTrue(result.next());
                 assertTrue(result.getBoolean(1), table);
+            }
+        }
+    }
+
+    private void assertIndex(
+        Connection connection, String table, String index)
+        throws Exception {
+        try (var statement = connection.prepareStatement("""
+            SELECT indexdef
+            FROM pg_indexes
+            WHERE schemaname='public'
+              AND tablename=?
+              AND indexname=?
+            """)) {
+            statement.setString(1, table);
+            statement.setString(2, index);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next(), index);
+                String definition = result.getString("indexdef");
+                assertTrue(
+                    definition.contains("WHERE ((is_default = true)")
+                        && definition.contains("(deleted = 0)"),
+                    definition);
             }
         }
     }

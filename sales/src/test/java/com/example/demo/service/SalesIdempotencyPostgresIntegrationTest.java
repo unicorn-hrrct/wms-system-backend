@@ -84,8 +84,10 @@ class SalesIdempotencyPostgresIntegrationTest {
                 "sales.postgres.user", "postgres"));
         registry.add(
             "spring.datasource.password",
-            () -> System.getProperty(
-                "sales.postgres.password", ""));
+            () -> setting(
+                "sales.postgres.password",
+                "SALES_POSTGRES_PASSWORD",
+                ""));
     }
 
     @BeforeAll
@@ -424,6 +426,20 @@ class SalesIdempotencyPostgresIntegrationTest {
                 name + " 必须指向可丢弃 PostgreSQL 测试库");
         }
         return value.trim();
+    }
+
+    private static String setting(
+        String propertyName,
+        String environmentName,
+        String defaultValue) {
+        String propertyValue = System.getProperty(propertyName);
+        if (propertyValue != null) {
+            return propertyValue;
+        }
+        String environmentValue = System.getenv(environmentName);
+        return environmentValue == null
+            ? defaultValue
+            : environmentValue;
     }
 
     private static void requireDestructiveTargetConfirmation() {

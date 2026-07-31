@@ -87,9 +87,9 @@ PUT  /api/v1/web/aftersale/{aftersaleId}/audit
 
 结果：
 
-- 分类契约测试：28/28，通过；其中 PostgreSQL 幂等事务边界 5/5、迁移重复执行
-  1/1、真实 HTTP 回归 2/2，DTO/Controller/Service 契约测试 20/20。
-- 项目级非破坏性回归（不重复执行上面的迁移和 HTTP 两类破坏性测试）：45/45，通过；
+- 分类契约测试：35/35，通过；其中 PostgreSQL 幂等事务边界 5/5、迁移重复执行
+  1/1、真实 HTTP 回归 2/2，DTO/Controller/Service 契约测试 27/27。
+- 项目级非重建型回归（不重复执行上面的迁移和 HTTP 两类重建型测试）：52/52，通过；
   运行前已加载团队 Schema、数据和 V001，并关闭 Spring 重复初始化，
   `mvn clean test` 重新编译 171 个主源码文件。
 - 团队原 `BusinessApiControllerTests` 在临时验证副本中仅做契约适配：Customer 更新

@@ -59,6 +59,10 @@ public class SalesIdempotencyService {
             operation, USER, userId, idempotencyKey, request, responseType, action);
     }
 
+    void validateKey(String idempotencyKey) {
+        parseKey(idempotencyKey);
+    }
+
     private <T> T executeForSubject(String operation,
                                     String subjectType,
                                     long subjectId,

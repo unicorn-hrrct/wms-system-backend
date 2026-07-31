@@ -534,6 +534,10 @@ BEGIN
 END
 $$;
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_address_customer_default
+    ON crm_address(customer_id)
+    WHERE is_default = TRUE AND deleted = 0;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_aftersale_refund
     ON ord_aftersale(refund_id)
     WHERE refund_id IS NOT NULL;

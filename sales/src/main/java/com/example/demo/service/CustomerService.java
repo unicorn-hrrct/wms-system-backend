@@ -69,6 +69,7 @@ public class CustomerService {
     @Transactional
     public CustomerResponse updateCurrent(
         String nickname, String phone, String email, String idempotencyKey) {
+        idempotencyService.validateKey(idempotencyKey);
         getOrCreateCurrent();
         long customerId = customerIdProvider.requireCurrentCustomerIdForUpdate();
         CustomerUpdateCommand command = new CustomerUpdateCommand(nickname, phone, email);

@@ -17,9 +17,11 @@ import org.springframework.jdbc.core.RowMapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,9 +30,11 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -102,6 +106,23 @@ class CustomerAddressServiceContractTest {
     }
 
     @Test
+    void customerUpdateValidatesKeyBeforeCreatingCustomerProfile() {
+        BusinessException missingKey = new BusinessException(
+            ApiErrorCode.BAD_REQUEST, "缺少 Idempotency-Key 请求头");
+        doThrow(missingKey).when(idempotencyService).validateKey(null);
+
+        BusinessException error = assertThrows(
+            BusinessException.class,
+            () -> customerService.updateCurrent(
+                "新昵称", null, "new@example.com", null));
+
+        assertEquals(ApiErrorCode.BAD_REQUEST, error.getErrorCode());
+        verify(idempotencyService).validateKey(null);
+        verifyNoInteractions(
+            currentUser, customerMapper, customerIdProvider, jdbcTemplate);
+    }
+
+    @Test
     void addressCreateUsesMappedCustomerIdempotencySubject() {
         when(customerIdProvider.requireCurrentCustomerIdForUpdate())
             .thenReturn(CUSTOMER_ID);
@@ -158,6 +179,117 @@ class CustomerAddressServiceContractTest {
         assertEquals(
             ApiErrorCode.RESOURCE_FORBIDDEN,
             error.getErrorCode());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void foreignAddressWritesUseResourceForbiddenWithoutMutation() {
+        when(customerIdProvider.requireCurrentCustomerIdForUpdate())
+            .thenReturn(CUSTOMER_ID);
+        when(jdbcTemplate.query(
+            contains("SELECT is_default"),
+            any(RowMapper.class),
+            eq(ADDRESS_ID),
+            eq(CUSTOMER_ID)))
+            .thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(
+            contains("WHERE id=? AND deleted=0"),
+            eq(Integer.class),
+            eq(ADDRESS_ID)))
+            .thenReturn(1);
+
+        BusinessException updateError = assertThrows(
+            BusinessException.class,
+            () -> addressService.update(
+                ADDRESS_ID,
+                "李明",
+                "13900139000",
+                null,
+                null,
+                null,
+                null,
+                null,
+                IDEMPOTENCY_KEY));
+        BusinessException deleteError = assertThrows(
+            BusinessException.class,
+            () -> addressService.delete(ADDRESS_ID, IDEMPOTENCY_KEY));
+        BusinessException defaultError = assertThrows(
+            BusinessException.class,
+            () -> addressService.setDefault(ADDRESS_ID, IDEMPOTENCY_KEY));
+
+        assertEquals(ApiErrorCode.RESOURCE_FORBIDDEN, updateError.getErrorCode());
+        assertEquals(ApiErrorCode.RESOURCE_FORBIDDEN, deleteError.getErrorCode());
+        assertEquals(ApiErrorCode.RESOURCE_FORBIDDEN, defaultError.getErrorCode());
+        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deletingTheLastAddressIsRejectedWithoutMutation() {
+        when(customerIdProvider.requireCurrentCustomerIdForUpdate())
+            .thenReturn(CUSTOMER_ID);
+        when(jdbcTemplate.query(
+            contains("SELECT is_default"),
+            any(RowMapper.class),
+            eq(ADDRESS_ID),
+            eq(CUSTOMER_ID)))
+            .thenReturn(List.of(true));
+        when(jdbcTemplate.queryForObject(
+            contains("SELECT COUNT(*) FROM crm_address"),
+            eq(Integer.class),
+            eq(CUSTOMER_ID)))
+            .thenReturn(1);
+
+        BusinessException error = assertThrows(
+            BusinessException.class,
+            () -> addressService.delete(ADDRESS_ID, IDEMPOTENCY_KEY));
+
+        assertEquals(ApiErrorCode.BAD_REQUEST, error.getErrorCode());
+        assertTrue(error.getMessage().contains("最后一条地址不允许删除"));
+        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void referencedAddressAllowsOnlyReceiverFieldUpdates() {
+        when(customerIdProvider.requireCurrentCustomerIdForUpdate())
+            .thenReturn(CUSTOMER_ID);
+        when(jdbcTemplate.query(
+            contains("SELECT is_default"),
+            any(RowMapper.class),
+            eq(ADDRESS_ID),
+            eq(CUSTOMER_ID)))
+            .thenReturn(List.of(false));
+        when(jdbcTemplate.queryForObject(
+            contains("FROM ord_order WHERE address_id=?"),
+            eq(Integer.class),
+            eq(ADDRESS_ID)))
+            .thenReturn(1);
+        when(jdbcTemplate.queryForObject(
+            contains("SELECT * FROM crm_address WHERE id=? AND customer_id=?"),
+            any(RowMapper.class),
+            eq(ADDRESS_ID),
+            eq(CUSTOMER_ID)))
+            .thenReturn(Map.of("addressId", ADDRESS_ID));
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        Map<String, Object> result = addressService.update(
+            ADDRESS_ID,
+            "新收货人",
+            "13900139000",
+            null,
+            null,
+            null,
+            null,
+            null,
+            IDEMPOTENCY_KEY);
+
+        assertEquals(ADDRESS_ID, result.get("addressId"));
+        verify(jdbcTemplate).update(sql.capture(), any(Object[].class));
+        assertTrue(sql.getValue().contains("receiver_name=?"));
+        assertTrue(sql.getValue().contains("receiver_phone=?"));
+        assertFalse(sql.getValue().contains("province=?"));
+        assertFalse(sql.getValue().contains("detail_address=?"));
     }
 
     @Test
