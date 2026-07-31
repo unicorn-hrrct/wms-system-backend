@@ -44,7 +44,7 @@
 1. 执行 `mvn clean test -DskipTests`；
 2. 执行固定 8 类，并安全解析且精确核对 8 份新生成的 Surefire XML；
 3. `clean` 后执行固定迁移测试，恢复专用库并精确核对 1/1；
-4. 再次 `clean`，执行固定 10 类项目回归并精确核对 52/52。
+4. 再次 `clean`，执行固定 10 类项目回归并精确核对 53/53。
 
 密码以 `SecureString` 传入，只通过子进程环境使用，Maven 输出会脱敏并在结束后恢复
 原环境。本次干净编译重新编译 171 个主源码文件和 13 个测试源码文件，结果为
@@ -77,10 +77,10 @@
 | `AftersaleRefundRequestValidationTest` | 3 | 0 | 0 | 0 |
 | `SalesOverlayMigrationTest` | 1 | 0 | 0 | 0 |
 | `AftersaleServiceContractTest` | 5 | 0 | 0 | 0 |
-| `CustomerAddressServiceContractTest` | 7 | 0 | 0 | 0 |
+| `CustomerAddressServiceContractTest` | 8 | 0 | 0 | 0 |
 | `RefundServiceContractTest` | 11 | 0 | 0 | 0 |
 | `SalesIdempotencyPostgresIntegrationTest` | 5 | 0 | 0 | 0 |
-| **合计** | **35** | **0** | **0** | **0** |
+| **合计** | **36** | **0** | **0** | **0** |
 
 本次复验证明：
 
@@ -113,18 +113,18 @@
 | `DemoApplicationTests` | 1 | 0 | 0 | 0 |
 | `AftersaleRefundRequestValidationTest` | 3 | 0 | 0 | 0 |
 | `AftersaleServiceContractTest` | 5 | 0 | 0 | 0 |
-| `CustomerAddressServiceContractTest` | 7 | 0 | 0 | 0 |
+| `CustomerAddressServiceContractTest` | 8 | 0 | 0 | 0 |
 | `RefundServiceContractTest` | 11 | 0 | 0 | 0 |
-| **合计** | **52** | **0** | **0** | **0** |
+| **合计** | **53** | **0** | **0** | **0** |
 
 首次整理选择器时把 `AppDataControllerTests` 误写成不存在的 `AppDataTests`，Maven
 只运行了 42 项；补正后若直接复用已被前一轮修改的数据库，会出现库存基数和商家申请
 状态两项污染失败。该结果未被计为代码回归。执行迁移测试恢复干净数据后，最终一次
-正确选择器为上表 52/52。
+正确选择器为上表 53/53。
 
 脚本对 10 份报告的精确文件集、suite 名、测试数、失败、错误、跳过、testcase 节点和
 报告文件生成时间均验收通过。脚本退出后又使用独立只读命令解析同一批 XML，结果仍为
-10 份、52 tests / 0 failures / 0 errors / 0 skipped，且类名集合与固定清单一致。
+10 份、53 tests / 0 failures / 0 errors / 0 skipped，且类名集合与固定清单一致。
 
 Spring 测试上下文启动时尝试连接 `localhost:5672`，日志明确记录
 `Connection refused`。该连接失败没有使最终两阶段测试失败，但也说明本次结果不能
@@ -132,7 +132,7 @@ Spring 测试上下文启动时尝试连接 `localhost:5672`，日志明确记�
 
 ## 4. 结论边界
 
-- 分类 35 项与非重建型 52 项有 27 项重叠；两阶段合计覆盖当前 13 个测试类中的
+- 分类 36 项与非重建型 53 项有 28 项重叠；两阶段合计覆盖当前 13 个测试类中的
   60 个不同测试方法，但不是一次无序执行的“60 项全量命令”。
 - 当前报告证明 Outbox 事务落库边界，不证明 RabbitMQ 实际发布、重试、死信或 IVP
   消费与库存结果。

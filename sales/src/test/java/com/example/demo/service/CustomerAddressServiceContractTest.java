@@ -30,9 +30,11 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -101,6 +103,23 @@ class CustomerAddressServiceContractTest {
         assertTrue(sql.getValue().contains("WHERE id=? AND deleted=0"));
         assertTrue(sql.getValue().contains(
             "RETURNING id, user_id, nickname, phone, email, level, registered_at"));
+    }
+
+    @Test
+    void customerUpdateValidatesKeyBeforeCreatingCustomerProfile() {
+        BusinessException missingKey = new BusinessException(
+            ApiErrorCode.BAD_REQUEST, "缺少 Idempotency-Key 请求头");
+        doThrow(missingKey).when(idempotencyService).validateKey(null);
+
+        BusinessException error = assertThrows(
+            BusinessException.class,
+            () -> customerService.updateCurrent(
+                "新昵称", null, "new@example.com", null));
+
+        assertEquals(ApiErrorCode.BAD_REQUEST, error.getErrorCode());
+        verify(idempotencyService).validateKey(null);
+        verifyNoInteractions(
+            currentUser, customerMapper, customerIdProvider, jdbcTemplate);
     }
 
     @Test
