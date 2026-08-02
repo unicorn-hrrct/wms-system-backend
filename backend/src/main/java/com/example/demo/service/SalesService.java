@@ -218,10 +218,16 @@ public class SalesService {
             throw ex;
         }
         // 把预占分配写到 ord_order_item
-        List<StockReservationResponse.Line> lines = reservation.items();
-        int idx = 0;
+        Map<Long, StockReservationResponse.Line> reservationLineBySkuId = new LinkedHashMap<>();
+        for (StockReservationResponse.Line line : reservation.items()) {
+            reservationLineBySkuId.put(line.skuId(), line);
+        }
         for (CartOrderItem item : items) {
-            StockReservationResponse.Line line = lines.get(idx++);
+            StockReservationResponse.Line line = reservationLineBySkuId.get(item.skuId());
+            if (line == null) {
+                throw new BusinessException(ApiErrorCode.INTERNAL_SERVER_ERROR,
+                    "Stock reservation result missing sku: " + item.skuId());
+            }
             jdbcTemplate.update("""
                 INSERT INTO ord_order_item(order_id,sku_id,sku_code,product_name,spec_values,main_image,price,quantity,subtotal,warehouse_id,location_id)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)

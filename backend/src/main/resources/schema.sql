@@ -379,7 +379,7 @@ CREATE TABLE sto_stock_alert_rule (
 -- v1.2 §10.1.0 整单批量预占：持久化预占记录，PG 为库存事实来源
 CREATE TABLE sto_stock_reservation (
     id            BIGSERIAL PRIMARY KEY,
-    reservation_id VARCHAR(64) NOT NULL UNIQUE,
+    reservation_id VARCHAR(64) NOT NULL,
     request_id    VARCHAR(120),
     order_no      VARCHAR(40),
     sku_id        BIGINT NOT NULL REFERENCES pro_sku(id),
@@ -392,6 +392,7 @@ CREATE TABLE sto_stock_reservation (
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX uq_reservation_line ON sto_stock_reservation(reservation_id, sku_id, warehouse_id, location_id);
 CREATE INDEX idx_reservation_status_expires ON sto_stock_reservation(status, expires_at);
 CREATE INDEX idx_reservation_order_no ON sto_stock_reservation(order_no);
 

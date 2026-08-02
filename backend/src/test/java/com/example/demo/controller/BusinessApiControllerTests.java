@@ -256,6 +256,56 @@ class BusinessApiControllerTests {
     }
 
     @Test
+    void customerCanCreateOrderWithMultipleCartItems() throws Exception {
+        String alice = bearerToken("alice", "alice123");
+        MvcResult firstCart = mockMvc.perform(post("/api/v1/cart/add")
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"skuId\":2002,\"quantity\":1}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.skuId").value(2002))
+            .andReturn();
+        MvcResult secondCart = mockMvc.perform(post("/api/v1/cart/add")
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"skuId\":2001,\"quantity\":1}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.skuId").value(2001))
+            .andReturn();
+        long firstCartItemId = json(firstCart).path("data").path("cartItemId").asLong();
+        long secondCartItemId = json(secondCart).path("data").path("cartItemId").asLong();
+        String key = "multi-item-order-" + UUID.randomUUID();
+        String body = "{\"addressId\":201,\"cartItemIds\":[" + firstCartItemId + "," + secondCartItemId + "]}";
+
+        MvcResult orderResult = mockMvc.perform(post("/api/v1/order/create")
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value(0))
+            .andReturn();
+        long orderId = json(orderResult).path("data").path("orderId").asLong();
+
+        Integer orderItemCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM ord_order_item WHERE order_id=?", Integer.class, orderId);
+        Integer reservationCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM sto_stock_reservation WHERE reservation_id=?", Integer.class, key);
+        Integer matchedStockLocationCount = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*)
+            FROM ord_order_item oi
+            JOIN sto_stock s ON s.sku_id=oi.sku_id
+                AND s.warehouse_id=oi.warehouse_id
+                AND s.location_id=oi.location_id
+                AND s.deleted=0
+            WHERE oi.order_id=?
+            """, Integer.class, orderId);
+        org.junit.jupiter.api.Assertions.assertEquals(2, orderItemCount);
+        org.junit.jupiter.api.Assertions.assertEquals(2, reservationCount);
+        org.junit.jupiter.api.Assertions.assertEquals(2, matchedStockLocationCount);
+    }
+
+    @Test
     void purchaseInventoryFlowShouldUpdateStock() throws Exception {
         String admin = bearerToken("admin", "admin123");
         MvcResult requestResult = mockMvc.perform(post("/api/v1/purchase/request")
