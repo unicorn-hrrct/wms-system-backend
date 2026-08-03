@@ -45,6 +45,11 @@ public class PaymentController {
         return Result.success("回调处理完成", paymentService.mockCallback(request, timestamp, nonce, signature));
     }
 
+    @PostMapping("/{payNo}/mock-success")
+    public Result<Map<String, Object>> mockSuccess(@PathVariable String payNo) {
+        return Result.success("Mock payment completed", paymentService.mockSuccess(payNo));
+    }
+
     @GetMapping("/{payNo}/status")
     public Result<Map<String, Object>> status(@PathVariable String payNo) {
         return Result.success("查询成功", paymentService.status(payNo));

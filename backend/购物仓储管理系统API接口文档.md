@@ -1628,6 +1628,18 @@ Content-Type: application/json
 
    影响行数为 0 时，说明已被取消/已支付，进入"已扣款但订单已取消"分支：自动生成退款单并走 §7.11 完成流程。
 
+#### 7.4.3.1 User-facing Mock cashier confirmation
+```
+POST /payment/{payNo}/mock-success
+Authorization: Bearer <customer-token>
+```
+
+The Mock cashier page calls this endpoint after the user confirms payment.
+The server verifies payment ownership and pending state, then atomically
+updates `pay_payment.pay_status=1` and `ord_order.status=1` (paid/pending
+shipment), confirms stock reservations, writes the order timeline, and emits
+the `ORDER_PAID` outbox event. Repeated calls return `ALREADY_PROCESSED`.
+
 #### 7.4.4 查询支付状态（v1.2 新增）
 
 ```

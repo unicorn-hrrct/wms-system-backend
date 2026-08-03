@@ -102,6 +102,61 @@ public class PaymentService {
             (BigDecimal) order.get("payAmount"), payExpire, "/mock-pay?payNo=" + payNo);
     }
 
+    /**
+     * Completes a payment from the authenticated Mock cashier page.
+     *
+     * <p>The page is a user-facing sandbox, so it must not call the internal
+     * service callback directly. Ownership and pending order state are checked
+     * before the same durable payment transition used by the callback.</p>
+     */
+    @Transactional
+    public Map<String, Object> mockSuccess(String payNo) {
+        if (!StringUtils.hasText(payNo)) {
+            throw new BusinessException(ApiErrorCode.BAD_REQUEST, "payNo is required");
+        }
+
+        Long userId = currentUser.requireUserId();
+        List<MockPaymentRow> rows = jdbcTemplate.query("""
+            SELECT p.pay_no, p.order_id, p.pay_status, p.pay_amount, p.expire_time payment_expire_time,
+                   o.status order_status, o.expire_time order_expire_time
+            FROM pay_payment p
+            JOIN ord_order o ON o.id=p.order_id
+            WHERE p.pay_no=? AND o.user_id=?
+            FOR UPDATE
+            """, (rs, rowNum) -> new MockPaymentRow(
+                rs.getString("pay_no"),
+                rs.getLong("order_id"),
+                rs.getInt("pay_status"),
+                rs.getBigDecimal("pay_amount"),
+                rs.getTimestamp("payment_expire_time") == null
+                    ? null : rs.getTimestamp("payment_expire_time").toLocalDateTime(),
+                rs.getInt("order_status"),
+                rs.getTimestamp("order_expire_time").toLocalDateTime()),
+            payNo, userId);
+        if (rows.isEmpty()) {
+            throw new BusinessException(ApiErrorCode.NOT_FOUND, "payment not found");
+        }
+
+        MockPaymentRow payment = rows.getFirst();
+        if (payment.payStatus() == 1) {
+            return paymentResult(payment.payNo(), payment.orderId(), "ALREADY_PROCESSED",
+                1, payment.orderStatus(), null, payment.payAmount());
+        }
+        if (payment.payStatus() != 0 || payment.orderStatus() != 0) {
+            throw new BusinessException(ApiErrorCode.ORDER_STATE_INVALID,
+                "payment or order is no longer pending");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        if (isExpired(payment.paymentExpireTime(), now) || isExpired(payment.orderExpireTime(), now)) {
+            throw new BusinessException(ApiErrorCode.PAYMENT_TIMEOUT);
+        }
+
+        String providerTransactionNo = "MOCK-TX-"
+            + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
+        return completeSuccess(payment.payNo(), providerTransactionNo, payment.payAmount(), false);
+    }
+
     @Transactional
     public Map<String, Object> mockCallback(MockCallbackRequest request,
                                             String timestamp,
@@ -156,50 +211,7 @@ public class PaymentService {
                 request.payNo());
             return Map.of("payNo", request.payNo(), "result", "FAILED");
         }
-        int updated = jdbcTemplate.update("""
-            UPDATE pay_payment
-            SET pay_status=1, provider_transaction_no=?, callback_received_at=CURRENT_TIMESTAMP, pay_time=CURRENT_TIMESTAMP
-            WHERE pay_no=? AND pay_status=0
-            """, request.providerTransactionNo(), request.payNo());
-        if (updated == 0) {
-            return Map.of("payNo", request.payNo(), "result", "ALREADY_PROCESSED");
-        }
-        // 6. 推进订单 status 0 -> 1
-        List<Long> orderIds = jdbcTemplate.queryForList(
-            "SELECT order_id FROM pay_payment WHERE pay_no=?", Long.class, request.payNo());
-        if (orderIds.isEmpty()) {
-            throw new BusinessException(ApiErrorCode.NOT_FOUND, "支付单未绑定订单");
-        }
-        Long orderId = orderIds.getFirst();
-        int orderUpdated = jdbcTemplate.update("""
-            UPDATE ord_order
-            SET status=1, pay_time=CURRENT_TIMESTAMP, update_time=CURRENT_TIMESTAMP
-            WHERE id=? AND status=0 AND expire_time > CURRENT_TIMESTAMP
-            """, orderId);
-        if (orderUpdated == 0) {
-            // 订单已被取消或已支付，走自动退款分支（v1.2 §7.4.3）
-            jdbcTemplate.update(
-                "INSERT INTO ref_refund(refund_no, order_id, order_item_id, customer_id, type, status, apply_refund_amount, reason)" +
-                    " SELECT 'RF-AUTO-' || o.id, o.id, oi.id, o.customer_id, 1, 0, oi.price * oi.quantity, '已扣款但订单已取消自动退款'" +
-                    " FROM ord_order o JOIN ord_order_item oi ON oi.order_id=o.id WHERE o.id=? LIMIT 1",
-                orderId);
-            return Map.of("payNo", request.payNo(), "result", "AUTO_REFUND_INITIATED");
-        }
-        // 7. 确认预占 + Outbox ORDER_PAID
-        List<String> reservations = jdbcTemplate.queryForList(
-            "SELECT reservation_id FROM sto_stock_reservation WHERE order_no IN (SELECT order_no FROM ord_order WHERE id=?) AND status=0",
-            String.class, orderId);
-        for (String reservationId : reservations) {
-            try {
-                stockReservationService.confirm(reservationId);
-            } catch (Exception ex) {
-                // 单条失败不影响其他
-            }
-        }
-        jdbcTemplate.update("INSERT INTO ord_order_timeline(order_id, event) VALUES (?, ?)", orderId, "支付成功");
-        outboxEventService.addOutbox("sales.order.paid", "ORDER_PAID", orderId,
-            Map.of("orderId", orderId, "payNo", request.payNo(), "amount", request.paidAmount()));
-        return Map.of("payNo", request.payNo(), "orderId", orderId, "result", "SUCCESS");
+        return completeSuccess(request.payNo(), request.providerTransactionNo(), request.paidAmount(), true);
     }
 
     public Map<String, Object> status(String payNo) {
@@ -229,6 +241,121 @@ public class PaymentService {
         return row;
     }
 
+    private Map<String, Object> completeSuccess(String payNo,
+                                                String providerTransactionNo,
+                                                BigDecimal paidAmount,
+                                                boolean allowAutoRefund) {
+        if (!StringUtils.hasText(providerTransactionNo)) {
+            throw new BusinessException(ApiErrorCode.BAD_REQUEST, "providerTransactionNo is required");
+        }
+
+        List<PaymentOrderRow> rows = jdbcTemplate.query("""
+            SELECT p.pay_no, p.order_id, p.pay_status, p.pay_amount, o.status order_status
+            FROM pay_payment p
+            JOIN ord_order o ON o.id=p.order_id
+            WHERE p.pay_no=?
+            FOR UPDATE
+            """, (rs, rowNum) -> new PaymentOrderRow(
+                rs.getString("pay_no"),
+                rs.getLong("order_id"),
+                rs.getInt("pay_status"),
+                rs.getBigDecimal("pay_amount"),
+                rs.getInt("order_status")),
+            payNo);
+        if (rows.isEmpty()) {
+            throw new BusinessException(ApiErrorCode.NOT_FOUND, "payment not found");
+        }
+
+        PaymentOrderRow payment = rows.getFirst();
+        if (payment.payStatus() == 1) {
+            return paymentResult(payment.payNo(), payment.orderId(), "ALREADY_PROCESSED",
+                1, payment.orderStatus(), null, payment.payAmount());
+        }
+        if (payment.payStatus() != 0) {
+            throw new BusinessException(ApiErrorCode.ORDER_STATE_INVALID, "payment is no longer pending");
+        }
+        if (paidAmount != null && paidAmount.compareTo(payment.payAmount()) != 0) {
+            throw new BusinessException(ApiErrorCode.ORDER_STATE_INVALID, "paid amount does not match payment amount");
+        }
+
+        int updated;
+        try {
+            updated = jdbcTemplate.update("""
+                UPDATE pay_payment
+                SET pay_status=1, provider_transaction_no=?, callback_received_at=CURRENT_TIMESTAMP,
+                    pay_time=CURRENT_TIMESTAMP
+                WHERE pay_no=? AND pay_status=0
+                """, providerTransactionNo, payNo);
+        } catch (DuplicateKeyException ex) {
+            throw new BusinessException(ApiErrorCode.ORDER_STATE_INVALID,
+                "providerTransactionNo is already bound to another payment");
+        }
+        if (updated == 0) {
+            return paymentResult(payment.payNo(), payment.orderId(), "ALREADY_PROCESSED",
+                1, payment.orderStatus(), null, payment.payAmount());
+        }
+
+        int orderUpdated = jdbcTemplate.update("""
+            UPDATE ord_order
+            SET status=1, pay_time=CURRENT_TIMESTAMP, update_time=CURRENT_TIMESTAMP
+            WHERE id=? AND status=0 AND expire_time > CURRENT_TIMESTAMP
+            """, payment.orderId());
+        if (orderUpdated == 0) {
+            if (!allowAutoRefund) {
+                throw new BusinessException(ApiErrorCode.ORDER_STATE_INVALID,
+                    "order is no longer pending or has expired");
+            }
+            jdbcTemplate.update(
+                "INSERT INTO ref_refund(refund_no, order_id, order_item_id, customer_id, type, status, apply_refund_amount, reason)" +
+                    " SELECT 'RF-AUTO-' || o.id, o.id, oi.id, o.customer_id, 1, 0, oi.price * oi.quantity, 'Mock payment paid after order cancellation'" +
+                    " FROM ord_order o JOIN ord_order_item oi ON oi.order_id=o.id WHERE o.id=? LIMIT 1",
+                payment.orderId());
+            return paymentResult(payment.payNo(), payment.orderId(), "AUTO_REFUND_INITIATED",
+                1, payment.orderStatus(), providerTransactionNo, payment.payAmount());
+        }
+
+        List<String> reservations = jdbcTemplate.queryForList(
+            "SELECT reservation_id FROM sto_stock_reservation WHERE order_no IN (SELECT order_no FROM ord_order WHERE id=?) AND status=0",
+            String.class, payment.orderId());
+        for (String reservationId : reservations) {
+            try {
+                stockReservationService.confirm(reservationId);
+            } catch (Exception ex) {
+                // One reservation failure should not prevent the payment state transition.
+            }
+        }
+        jdbcTemplate.update("INSERT INTO ord_order_timeline(order_id, event) VALUES (?, ?)",
+            payment.orderId(), "Payment completed");
+        BigDecimal eventAmount = paidAmount == null ? payment.payAmount() : paidAmount;
+        outboxEventService.addOutbox("sales.order.paid", "ORDER_PAID", payment.orderId(),
+            Map.of("orderId", payment.orderId(), "payNo", payment.payNo(), "amount", eventAmount));
+        return paymentResult(payment.payNo(), payment.orderId(), "SUCCESS",
+            1, 1, providerTransactionNo, eventAmount);
+    }
+
+    private Map<String, Object> paymentResult(String payNo,
+                                              Long orderId,
+                                              String result,
+                                              Integer payStatus,
+                                              Integer orderStatus,
+                                              String providerTransactionNo,
+                                              BigDecimal paidAmount) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("payNo", payNo);
+        response.put("orderId", orderId);
+        response.put("result", result);
+        response.put("payStatus", payStatus);
+        response.put("payStatusText", payStatus == null ? null : payStatusText(payStatus));
+        response.put("orderStatus", orderStatus);
+        response.put("providerTransactionNo", providerTransactionNo);
+        response.put("paidAmount", paidAmount);
+        return response;
+    }
+
+    private boolean isExpired(LocalDateTime expireTime, LocalDateTime now) {
+        return expireTime != null && expireTime.isBefore(now);
+    }
+
     private String payStatusText(int status) {
         return switch (status) {
             case 0 -> "待支付";
@@ -249,6 +376,22 @@ public class PaymentService {
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         byte[] digest = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
         return HexFormat.of().formatHex(digest);
+    }
+
+    private record MockPaymentRow(String payNo,
+                                  Long orderId,
+                                  Integer payStatus,
+                                  BigDecimal payAmount,
+                                  LocalDateTime paymentExpireTime,
+                                  Integer orderStatus,
+                                  LocalDateTime orderExpireTime) {
+    }
+
+    private record PaymentOrderRow(String payNo,
+                                   Long orderId,
+                                   Integer payStatus,
+                                   BigDecimal payAmount,
+                                   Integer orderStatus) {
     }
 
     private boolean constantTimeEquals(String a, String b) {

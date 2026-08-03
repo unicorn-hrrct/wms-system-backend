@@ -256,6 +256,67 @@ class BusinessApiControllerTests {
     }
 
     @Test
+    void customerCanCompleteMockPaymentFromCashierPage() throws Exception {
+        String alice = bearerToken("alice", "alice123");
+        MvcResult cartResult = mockMvc.perform(post("/api/v1/cart/add")
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"skuId\":2002,\"quantity\":1}"))
+            .andExpect(status().isOk())
+            .andReturn();
+        long cartItemId = json(cartResult).path("data").path("cartItemId").asLong();
+        String key = "mock-success-" + UUID.randomUUID();
+
+        MvcResult orderResult = mockMvc.perform(post("/api/v1/order/create")
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"addressId\":201,\"cartItemIds\":[" + cartItemId + "]}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value(0))
+            .andReturn();
+        long orderId = json(orderResult).path("data").path("orderId").asLong();
+
+        MvcResult payResult = mockMvc.perform(post("/api/v1/order/{orderId}/pay", orderId)
+                .header(HttpHeaders.AUTHORIZATION, alice)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"payType\":2}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.payStatus").value(0))
+            .andReturn();
+        String payNo = json(payResult).path("data").path("payNo").asText();
+
+        mockMvc.perform(post("/api/v1/payment/{payNo}/mock-success", payNo)
+                .header(HttpHeaders.AUTHORIZATION, alice))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.result").value("SUCCESS"))
+            .andExpect(jsonPath("$.data.payStatus").value(1))
+            .andExpect(jsonPath("$.data.orderStatus").value(1));
+
+        mockMvc.perform(post("/api/v1/payment/{payNo}/mock-success", payNo)
+                .header(HttpHeaders.AUTHORIZATION, alice))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.result").value("ALREADY_PROCESSED"));
+
+        mockMvc.perform(get("/api/v1/payment/{payNo}/status", payNo)
+                .header(HttpHeaders.AUTHORIZATION, alice))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.payStatus").value(1));
+
+        mockMvc.perform(get("/api/v1/order/{orderId}", orderId)
+                .header(HttpHeaders.AUTHORIZATION, alice))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value(1));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+            jdbcTemplate.queryForObject("SELECT pay_status FROM pay_payment WHERE pay_no=?",
+                Integer.class, payNo));
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+            jdbcTemplate.queryForObject("SELECT status FROM ord_order WHERE id=?",
+                Integer.class, orderId));
+    }
+
+    @Test
     void customerCanCreateOrderWithMultipleCartItems() throws Exception {
         String alice = bearerToken("alice", "alice123");
         MvcResult firstCart = mockMvc.perform(post("/api/v1/cart/add")
